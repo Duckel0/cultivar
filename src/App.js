@@ -215,7 +215,8 @@ export default function Cultivar() {
       if (sortBy === "price") return Math.min(...a.varieties.map(v => v.avgPrice)) - Math.min(...b.varieties.map(v => v.avgPrice));
       return 0;
     });
-  }, [search, filterType, filterDiff, filterTox, sortBy]);
+  // eslint-disable-next-line
+}, [search, filterType, filterDiff, filterTox, sortBy]);
 
   const toggleCompare = (p) => {
     if (compareList.find(c => c.id === p.id)) setCompareList(compareList.filter(c => c.id !== p.id));
