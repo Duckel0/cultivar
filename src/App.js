@@ -674,7 +674,8 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
           {sorted.map((v, i) => {
             const maxP = Math.max(...plant.varieties.map(x => x.avgPrice));
             const pct = (v.avgPrice / maxP) * 100;
-            const rc = RARITY_CONFIG[v.rarity] || RARITY_CONFIG["Common"];
+            // eslint-disable-next-line
+	    const rc = RARITY_CONFIG[v.rarity] || RARITY_CONFIG["Common"];
             return (
               <div key={v.name} style={{ marginBottom: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
