@@ -87,33 +87,36 @@ export default function Cultivar() {
   const [compareList, setCompareList] = useState([]);
   const [wishlist, setWishlist] = useState([]);
   const [activeTab, setActiveTab] = useState("varieties");
-const PERENUAL_KEY = "sk-Ij5d69da9d1c028ae16322";
+const UNSPLASH_KEY = "l-briROT5H2QN8KZgJzYE0U9O06uhe9HKUKyuy75VqE";
 
 const fetchAndSaveImages = async () => {
-  const plants = await dbQuery("plants", {
-    select: "id,scientific_name,image_url",
-    filter: "image_url=is.null",
-    limit: 100,
-  });
-  for (const plant of plants || []) {
-    try {
-      const res = await fetch(`https://perenual.com/api/species-list?key=${PERENUAL_KEY}&q=${encodeURIComponent(plant.scientific_name)}`);
-      const data = await res.json();
-      const img = data?.data?.[0]?.default_image?.medium_url;
-      if (img) {
-        await fetch(`${SUPABASE_URL}/rest/v1/plants?id=eq.${plant.id}`, {
-          method: "PATCH",
-          headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-            "Content-Type": "application/json",
-            "Prefer": "return=minimal",
-          },
-          body: JSON.stringify({ image_url: img }),
-        });
-      }
-    } catch (e) { console.error(e); }
-  }
+  try {
+    const plants = await dbQuery("plants", {
+      select: "id,common_name,scientific_name,image_url",
+      filter: "image_url=is.null",
+      limit: 30,
+    });
+    for (const plant of plants || []) {
+      try {
+        const searchTerm = plant.common_name || plant.scientific_name;
+        const res = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchTerm + ' plant')}&per_page=1&client_id=${UNSPLASH_KEY}`);
+        const data = await res.json();
+        const img = data?.results?.[0]?.urls?.regular;
+        if (img) {
+          await fetch(`${SUPABASE_URL}/rest/v1/plants?id=eq.${plant.id}`, {
+            method: "PATCH",
+            headers: {
+              apikey: SUPABASE_KEY,
+              Authorization: `Bearer ${SUPABASE_KEY}`,
+              "Content-Type": "application/json",
+              "Prefer": "return=minimal",
+            },
+            body: JSON.stringify({ image_url: img }),
+          });
+        }
+      } catch (e) { console.error(e); }
+    }
+  } catch (e) { console.error(e); }
 };
   const loadPlants = useCallback(async () => {
     try {
