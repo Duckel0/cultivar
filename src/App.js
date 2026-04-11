@@ -87,7 +87,34 @@ export default function Cultivar() {
   const [compareList, setCompareList] = useState([]);
   const [wishlist, setWishlist] = useState([]);
   const [activeTab, setActiveTab] = useState("varieties");
+const PERENUAL_KEY = "sk-Ij5d69da9d1c028ae16322";
 
+const fetchAndSaveImages = async () => {
+  const plants = await dbQuery("plants", {
+    select: "id,scientific_name,image_url",
+    filter: "image_url=is.null",
+    limit: 100,
+  });
+  for (const plant of plants || []) {
+    try {
+      const res = await fetch(`https://perenual.com/api/species-list?key=${PERENUAL_KEY}&q=${encodeURIComponent(plant.scientific_name)}`);
+      const data = await res.json();
+      const img = data?.data?.[0]?.default_image?.medium_url;
+      if (img) {
+        await fetch(`${SUPABASE_URL}/rest/v1/plants?id=eq.${plant.id}`, {
+          method: "PATCH",
+          headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+          },
+          body: JSON.stringify({ image_url: img }),
+        });
+      }
+    } catch (e) { console.error(e); }
+  }
+};
   const loadPlants = useCallback(async () => {
     try {
       setLoading(true);
@@ -104,7 +131,7 @@ export default function Cultivar() {
     }
   }, []);
 
-  useEffect(() => { loadPlants(); }, [loadPlants]);
+  useEffect(() => { loadPlants(); fetchAndSaveImages(); }, [loadPlants]);
 
   const types = useMemo(() => ["All", ...Array.from(new Set(plants.map(p => p.category).filter(Boolean))).sort()], [plants]);
   const diffs = ["All", "Very Easy", "Easy", "Moderate", "Hard", "Expert"];
