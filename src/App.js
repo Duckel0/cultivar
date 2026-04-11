@@ -194,7 +194,7 @@ const Icon = ({ n, s = 16 }) => {
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function Cultivar() {
-  const [view, setView] = useState("catalog");
+  const [view, setView] = useState("catalog");   const [dbPlants, setDbPlants] = useState([]);   const displayPlants = dbPlants.length > 0 ? dbPlants : PLANTS;
   const [selected, setSelected] = useState(null);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("All");
@@ -213,7 +213,7 @@ export default function Cultivar() {
   const diffs = ["All", "Very Easy", "Easy", "Moderate", "Hard"];
 
   const filtered = useMemo(() => {
-    let list = PLANTS.filter(p => {
+    let list = displayPlants.filter(p => {
       const q = search.toLowerCase();
       const ms = !q || p.name.toLowerCase().includes(q) || p.species.toLowerCase().includes(q) || p.tags.some(t => t.includes(q));
       const mt = filterType === "All" || p.type === filterType;
