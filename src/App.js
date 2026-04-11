@@ -143,7 +143,20 @@ const PLANTS = [
   },
 ];
 
-const RARITY_CONFIG = {
+const RETAILER_LINKS = {
+  "Amazon": "https://www.amazon.com/s?k=houseplants&tag=thecultivar-20",
+  "Home Depot": "https://www.homedepot.com/s/houseplants",
+  "Etsy": "https://www.etsy.com/search?q=houseplants",
+  "Lowe's": "https://www.lowes.com/search?searchTerm=houseplants",
+  "Walmart": "https://www.walmart.com/search?q=houseplants",
+  "IKEA": "https://www.ikea.com/us/en/search/?q=plants",
+  "Trader Joe's": "https://www.traderjoes.com",
+  "Costa Farms": "https://costafarms.com",
+  "Etsy Rare": "https://www.etsy.com/search?q=rare+houseplants&tag=thecultivar-20",
+  "Rare Rootz": "https://rarerootz.com",
+  "Logee's": "https://logees.com",
+  "California Carnivores": "https://californiacarnivores.com",
+};const RARITY_CONFIG = {
   "Common":         { color: "#5a8a3c", bg: "#edf5e8", label: "Common" },
   "Uncommon":       { color: "#2a7a6a", bg: "#e4f5f2", label: "Uncommon" },
   "Rare":           { color: "#5a3a8a", bg: "#f0ecfa", label: "Rare" },
@@ -637,7 +650,7 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
               <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                 <Icon n="map" s={11} />
                 {v.locations.map(l => (
-                  <span key={l} style={{ fontSize: 11, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "2px 8px", color: "var(--ink2)" }}>{l}</span>
+                  <span key={l} onClick={() => window.open(RETAILER_LINKS[l] || `https://www.google.com/search?q=${encodeURIComponent(l)}`, '_blank')} style={{ fontSize: 11, cursor:"pointer", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "2px 8px", color: "var(--ink2)" }}>{l}</span>
                 ))}
               </div>
             </div>
