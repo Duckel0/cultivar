@@ -124,7 +124,7 @@ export default function Cultivar() {
       if (sortBy === "difficulty") return diffs.indexOf(a.difficulty) - diffs.indexOf(b.difficulty);
       return 0;
     });
-  }, [plants, search, filterType, filterDiff, filterTox, sortBy]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps }, [plants, search, filterType, filterDiff, filterTox, sortBy]);
 
   const toggleCompare = p => {
     if (compareList.find(c => c.id === p.id)) setCompareList(compareList.filter(c => c.id !== p.id));
