@@ -91,7 +91,7 @@ const UNSPLASH_KEY = "l-briROT5H2QN8KZgJzYE0U9O06uhe9HKUKyuy75VqE";
 
 const fetchAndSaveImages = async () => {
   try {
-    const plants = await dbQuery("plants", {
+    const plants = await Query("plants", {
       select: "id,common_name,scientific_name,image_url",
       filter: "image_url=is.null",
       limit: 30,
