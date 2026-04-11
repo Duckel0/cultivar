@@ -347,7 +347,11 @@ function PlantCard({ plant, onOpen, onWish, onCompare, wished, compared }) {
             <Icon n="compare" s={12} />
           </button>
         </div>
-        <div style={{ fontSize: 34, marginBottom: 8, lineHeight: 1 }}>{plant.emoji}</div>
+        {plant.image_url ? (
+  <img src={plant.image_url} alt={plant.common_name} style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: "var(--radius-sm)", marginBottom: 8 }} />
+) : (
+  <div style={{ fontSize: 34, marginBottom: 8, lineHeight: 1 }}>{plant.emoji}</div>
+)}
         <div className="wm" style={{ fontSize: 18, fontWeight: 400, color: "var(--ink)", marginBottom: 1, letterSpacing: "-0.02em" }}>{plant.common_name}</div>
         <div style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink3)", marginBottom: 10 }}>{plant.scientific_name}</div>
         <p style={{ fontSize: 12, color: "var(--ink2)", lineHeight: 1.55, marginBottom: 12, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", fontWeight: 300 }}>{plant.description}</p>
