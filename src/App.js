@@ -209,7 +209,7 @@ export default function Cultivar() {
 
   useEffect(() => { setTimeout(() => setLoaded(true), 100); }, []);
 
-  const types = ["All", ...Array.from(new Set(PLANTS.map(p => p.type)))];
+  const types = ["All", ...Array.from(new Set(displayPlants.map(p => p.type)))];
   const diffs = ["All", "Very Easy", "Easy", "Moderate", "Hard"];
 
   const filtered = useMemo(() => {
