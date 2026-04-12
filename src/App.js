@@ -427,7 +427,7 @@ function PlantCard({ plant, onOpen, onWish, onCompare, wished, compared }) {
           {plant.rare && <span style={{ fontSize: 11, color: "#8a2a2a", background: "#faeaea", padding: "1px 7px", borderRadius: 99, fontWeight: 500 }}>✦ Rare</span>}
         </div>
       </div>
-    </div>
+    </a>
   );
 }
 
