@@ -87,11 +87,6 @@ function getSlugFromUrl() {
   return null;
 }
 
-function navigateTo(path) {
-  window.history.pushState({}, "", path);
-  window.dispatchEvent(new PopStateEvent("popstate"));
-}
-
 export default function Cultivar() {
   const [view, setView] = useState("catalog");
   const [selected, setSelected] = useState(null);
@@ -109,12 +104,12 @@ export default function Cultivar() {
 
   const fetchAndSaveImages = async () => {
     try {
-      const plants = await query("plants", {
+      const plantsWithoutImages = await query("plants", {
         select: "id,common_name,scientific_name,image_url",
         filter: "image_url=is.null",
         limit: 30,
       });
-      for (const plant of plants || []) {
+      for (const plant of plantsWithoutImages || []) {
         try {
           const searchTerm = plant.common_name || plant.scientific_name;
           const res = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchTerm + " plant")}&per_page=1&client_id=${UNSPLASH_KEY}`);
@@ -165,10 +160,12 @@ export default function Cultivar() {
     fetchAndSaveImages();
     const onPop = () => {
       const slug = getSlugFromUrl();
-      if (slug && plants.length > 0) {
-        const found = plants.find(p => p.slug === slug);
-        if (found) { setSelected(found); setView("detail"); }
-        else { setView("catalog"); setSelected(null); }
+      if (slug) {
+        setPlants(prev => {
+          const found = prev.find(p => p.slug === slug);
+          if (found) { setSelected(found); setView("detail"); }
+          return prev;
+        });
       } else {
         setView("catalog");
         setSelected(null);
@@ -248,6 +245,7 @@ export default function Cultivar() {
         input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;}
         .hero{background:linear-gradient(135deg,#0f2318 0%,#1a3a28 40%,#152e1f 100%);}
         @keyframes spin{to{transform:rotate(360deg);}}
+        .plant-card-link{text-decoration:none;color:inherit;display:block;}
       `}</style>
 
       <header className="hero" style={{ position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 0 rgba(255,255,255,0.06),0 4px 24px rgba(0,0,0,0.25)" }}>
@@ -272,7 +270,7 @@ export default function Cultivar() {
                 { id: "compare", label: compareList.length ? `Compare · ${compareList.length}` : "Compare" },
                 { id: "wishlist", label: wishlist.length ? `Saved · ${wishlist.length}` : "Saved" },
               ].map(t => (
-                <button key={t.id} className={`btn pill ${view === t.id ? "on" : ""}`} onClick={() => { setView(t.id); if (t.id === "catalog") goHome(); }}
+                <button key={t.id} className={`btn pill ${view === t.id ? "on" : ""}`} onClick={() => { if (t.id === "catalog") goHome(); else setView(t.id); }}
                   style={{ color: view === t.id ? "#ffffff" : "rgba(255,255,255,0.55)" }}>
                   {t.label}
                 </button>
@@ -388,8 +386,7 @@ function RarityBadge({ rarity }) {
 function PlantCard({ plant, onOpen, onWish, onCompare, wished, compared }) {
   const dc = DIFF_CONFIG[plant.difficulty] || DIFF_CONFIG["Easy"];
   return (
-    <a href={`/plant/${plant.slug}`} onClick={e => { e.preventDefault(); onOpen(plant); }} style={{ textDecoration: "none", color: "inherit", display: "block" }}
-    className="lift"
+    <a href={`/plant/${plant.slug}`} className="plant-card-link lift" onClick={e => { e.preventDefault(); onOpen(plant); }}
       style={{ background: "var(--surface)", border: `1.5px solid ${compared ? "var(--accent)" : "var(--border)"}`, borderRadius: "var(--radius)", overflow: "hidden", boxShadow: compared ? "0 0 0 3px var(--accent-bg)" : "var(--shadow)", position: "relative" }}>
       <div style={{ height: 3, background: `linear-gradient(90deg,${dc.dot},${dc.dot}44)` }} />
       <div style={{ padding: "14px 14px 12px" }}>
@@ -436,7 +433,9 @@ function PlantRow({ plant, onOpen, onWish, onCompare, wished, compared }) {
   return (
     <div className="lift" onClick={() => onOpen(plant)}
       style={{ background: "var(--surface)", border: `1.5px solid ${compared ? "var(--accent)" : "var(--border)"}`, borderRadius: "var(--radius-sm)", padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, boxShadow: "var(--shadow)" }}>
-      <div style={{ fontSize: 28, minWidth: 36 }}>{plant.image_url ? <img src={plant.image_url} alt={plant.common_name} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 8 }} /> : plant.emoji}</div>
+      <div style={{ fontSize: 28, minWidth: 36 }}>
+        {plant.image_url ? <img src={plant.image_url} alt={plant.common_name} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 8 }} /> : plant.emoji}
+      </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <span className="wm" style={{ fontWeight: 400, fontSize: 15, letterSpacing: "-0.01em" }}>{plant.common_name}</span>
         <span style={{ fontStyle: "italic", fontSize: 12, color: "var(--ink3)", marginLeft: 8 }}>{plant.scientific_name}</span>
@@ -491,7 +490,6 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
   }, [plant.id]);
 
   const allLocations = [...new Set(varieties.flatMap(v => v.prices.map(p => p.retailers?.name).filter(Boolean)))].sort();
-
   const shareUrl = `${window.location.origin}/plant/${plant.slug}`;
 
   return (
@@ -513,7 +511,7 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
             <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, transparent 40%, rgba(15,35,24,0.95))" }} />
           </div>
         )}
-        <div style={{ padding: "20px 20px 24px", position: "relative" }}>
+        <div style={{ padding: "20px 20px 24px" }}>
           {!plant.image_url && <div style={{ fontSize: 46, marginBottom: 8, lineHeight: 1 }}>{plant.emoji}</div>}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div style={{ flex: 1 }}>
@@ -556,9 +554,9 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
         </div>
       )}
 
-      <div style={{ borderBottom: "1px solid var(--border)", marginBottom: 14, display: "flex" }}>
-        {[["varieties", "Varieties & Prices"], ["locations", "Where to Buy"], ["traits", "Plant Traits"], ["care", "Care Guide"]].map(([id, label]) => (
-          <button key={id} className={`tab ${activeTab === id ? "on" : ""}`} onClick={() => setActiveTab(id)}>{label}</button>
+      <div style={{ borderBottom: "1px solid var(--border)", marginBottom: 14, display: "flex", overflowX: "auto" }}>
+        {[["varieties", "Varieties & Prices"], ["locations", "Where to Buy"], ["care", "Care Guide"], ["traits", "Plant Traits"]].map(([id, label]) => (
+          <button key={id} className={`tab ${activeTab === id ? "on" : ""}`} onClick={() => setActiveTab(id)} style={{ whiteSpace: "nowrap" }}>{label}</button>
         ))}
       </div>
 
@@ -646,6 +644,70 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
         </div>
       )}
 
+      {activeTab === "care" && (
+        <div className="fade" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {plant.care_notes && (
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 20 }}>💧</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Watering & General Care</span>
+              </div>
+              <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.care_notes}</p>
+            </div>
+          )}
+          {plant.soil && (
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 20 }}>🪴</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Soil & Potting</span>
+              </div>
+              <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.soil}</p>
+            </div>
+          )}
+          {plant.fertilizer && (
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 20 }}>🌿</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Fertilizing</span>
+              </div>
+              <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.fertilizer}</p>
+            </div>
+          )}
+          {plant.propagation && (
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 20 }}>✂️</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Propagation</span>
+              </div>
+              <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.propagation}</p>
+            </div>
+          )}
+          {plant.temperature && (
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 20 }}>🌡️</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Temperature & Humidity</span>
+              </div>
+              <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.temperature}</p>
+            </div>
+          )}
+          {plant.common_problems && (
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 20 }}>🔍</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Common Problems</span>
+              </div>
+              <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.common_problems}</p>
+            </div>
+          )}
+          {!plant.care_notes && !plant.soil && !plant.fertilizer && !plant.propagation && !plant.temperature && !plant.common_problems && (
+            <div style={{ textAlign: "center", padding: 32, color: "var(--ink3)", fontSize: 13 }}>
+              Detailed care guide coming soon for this plant.
+            </div>
+          )}
+        </div>
+      )}
+
       {activeTab === "traits" && (
         <div className="fade" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
@@ -673,69 +735,7 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
     </div>
   );
 }
-{activeTab === "care" && (
-  <div className="fade" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-    {plant.care_notes && (
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 20 }}>💧</span>
-          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Watering & General Care</span>
-        </div>
-        <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.care_notes}</p>
-      </div>
-    )}
-    {plant.soil && (
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 20 }}>🪴</span>
-          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Soil & Potting</span>
-        </div>
-        <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.soil}</p>
-      </div>
-    )}
-    {plant.fertilizer && (
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 20 }}>🌿</span>
-          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Fertilizing</span>
-        </div>
-        <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.fertilizer}</p>
-      </div>
-    )}
-    {plant.propagation && (
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 20 }}>✂️</span>
-          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Propagation</span>
-        </div>
-        <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.propagation}</p>
-      </div>
-    )}
-    {plant.temperature && (
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 20 }}>🌡️</span>
-          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Temperature & Humidity</span>
-        </div>
-        <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.temperature}</p>
-      </div>
-    )}
-    {plant.common_problems && (
-      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ fontSize: 20 }}>🔍</span>
-          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Common Problems</span>
-        </div>
-        <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.common_problems}</p>
-      </div>
-    )}
-    {!plant.care_notes && !plant.soil && (
-      <div style={{ textAlign: "center", padding: 32, color: "var(--ink3)", fontSize: 13 }}>
-        Detailed care guide coming soon for this plant.
-      </div>
-    )}
-  </div>
-)}
+
 function CompareView({ plants, onRemove, onOpen, allPlants, onAdd }) {
   const [q, setQ] = useState("");
   const sugg = allPlants.filter(p => !plants.find(c => c.id === p.id) && p.common_name?.toLowerCase().includes(q.toLowerCase())).slice(0, 5);
@@ -784,7 +784,7 @@ function CompareView({ plants, onRemove, onOpen, allPlants, onAdd }) {
           </div>
         )}
       </div>
-      <div style={{ overflowX: "auto", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", boxShadow: "var(--shadow)", overflow: "hidden" }}>
+      <div style={{ overflowX: "auto", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", boxShadow: "var(--shadow)" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "var(--surface2)" }}>
