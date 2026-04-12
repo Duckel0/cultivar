@@ -176,7 +176,7 @@ export default function Cultivar() {
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [loadPlants, plants]);
+  }, [loadPlants]);
 
   const types = useMemo(() => ["All", ...Array.from(new Set(plants.map(p => p.category).filter(Boolean))).sort()], [plants]);
   const diffs = ["All", "Very Easy", "Easy", "Moderate", "Hard", "Expert"];
