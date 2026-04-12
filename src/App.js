@@ -1,7 +1,9 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import { useState, useMemo, useEffect, useCallback } from "react";
 
 const SUPABASE_URL = "https://ewyfhousutslimzwoflk.supabase.co";
-const SUPABASE_KEY = "sb_publishable_S-NF4DxjmSFEGyyxQaML4A_BAfOR3yp";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWZob3VzdXRzbGltendvZmxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NzQ1OTksImV4cCI6MjA5MTM1MDU5OX0.SMq04MDpT-FLSHbWA6i_2meJ56cJfITTy4ig37K7R-s";
+const UNSPLASH_KEY = "l-briROT5H2QN8KZgJzYE0U9O06uhe9HKUKyuy75VqE";
 
 const RETAILER_LINKS = {
   "Amazon": "https://www.amazon.com/s?k=houseplants&tag=thecultivar-20",
@@ -20,10 +22,13 @@ const RETAILER_LINKS = {
   "Pistils Nursery": "https://pistilsnursery.com",
   "Leaf & Clay": "https://leafandclay.com",
   "Mountain Crest Gardens": "https://mountaincrestgardens.com",
+  "Bloomscape": "https://bloomscape.com",
+  "Plantvine": "https://plantvine.com",
+  "Nature Hills": "https://naturehills.com",
 };
 
 const query = async (table, options = {}) => {
-  let url = `${SUPABASE_URL}/rest/v1/${table}?`;
+  let url = `${SUPABASE_URL}/rest/v1/${table}?apikey=${SUPABASE_KEY}&`;
   if (options.select) url += `select=${encodeURIComponent(options.select)}&`;
   if (options.filter) url += `${options.filter}&`;
   if (options.order) url += `order=${options.order}&`;
@@ -33,6 +38,8 @@ const query = async (table, options = {}) => {
       apikey: SUPABASE_KEY,
       Authorization: `Bearer ${SUPABASE_KEY}`,
       "Content-Type": "application/json",
+      "Range-Unit": "items",
+      "Range": "0-999",
     },
   });
   if (!res.ok) throw new Error(await res.text());
@@ -69,9 +76,21 @@ const Icon = ({ n, s = 16 }) => {
     x:       <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
     map:     <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>,
     sparkle: <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>,
+    share:   <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>,
   };
   return d[n] || null;
 };
+
+function getSlugFromUrl() {
+  const path = window.location.pathname;
+  if (path.startsWith("/plant/")) return path.replace("/plant/", "");
+  return null;
+}
+
+function navigateTo(path) {
+  window.history.pushState({}, "", path);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
 
 export default function Cultivar() {
   const [view, setView] = useState("catalog");
@@ -87,37 +106,37 @@ export default function Cultivar() {
   const [compareList, setCompareList] = useState([]);
   const [wishlist, setWishlist] = useState([]);
   const [activeTab, setActiveTab] = useState("varieties");
-const UNSPLASH_KEY = "l-briROT5H2QN8KZgJzYE0U9O06uhe9HKUKyuy75VqE";
 
-const fetchAndSaveImages = async () => {
-  try {
-    const plants = await query("plants", {
-      select: "id,common_name,scientific_name,image_url",
-      filter: "image_url=is.null",
-      limit: 30,
-    });
-    for (const plant of plants || []) {
-      try {
-        const searchTerm = plant.common_name || plant.scientific_name;
-        const res = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchTerm + ' plant')}&per_page=1&client_id=${UNSPLASH_KEY}`);
-        const data = await res.json();
-        const img = data?.results?.[0]?.urls?.regular;
-        if (img) {
-          await fetch(`${SUPABASE_URL}/rest/v1/plants?id=eq.${plant.id}`, {
-            method: "PATCH",
-            headers: {
-              apikey: SUPABASE_KEY,
-              Authorization: `Bearer ${SUPABASE_KEY}`,
-              "Content-Type": "application/json",
-              "Prefer": "return=minimal",
-            },
-            body: JSON.stringify({ image_url: img }),
-          });
-        }
-      } catch (e) { console.error(e); }
-    }
-  } catch (e) { console.error(e); }
-};
+  const fetchAndSaveImages = async () => {
+    try {
+      const plants = await query("plants", {
+        select: "id,common_name,scientific_name,image_url",
+        filter: "image_url=is.null",
+        limit: 30,
+      });
+      for (const plant of plants || []) {
+        try {
+          const searchTerm = plant.common_name || plant.scientific_name;
+          const res = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchTerm + " plant")}&per_page=1&client_id=${UNSPLASH_KEY}`);
+          const data = await res.json();
+          const img = data?.results?.[0]?.urls?.regular;
+          if (img) {
+            await fetch(`${SUPABASE_URL}/rest/v1/plants?id=eq.${plant.id}`, {
+              method: "PATCH",
+              headers: {
+                apikey: SUPABASE_KEY,
+                Authorization: `Bearer ${SUPABASE_KEY}`,
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal",
+              },
+              body: JSON.stringify({ image_url: img }),
+            });
+          }
+        } catch (e) { console.error(e); }
+      }
+    } catch (e) { console.error(e); }
+  };
+
   const loadPlants = useCallback(async () => {
     try {
       setLoading(true);
@@ -126,7 +145,14 @@ const fetchAndSaveImages = async () => {
         filter: "published=eq.true",
         order: "common_name.asc",
       });
-      if (data && data.length > 0) setPlants(data);
+      if (data && data.length > 0) {
+        setPlants(data);
+        const slug = getSlugFromUrl();
+        if (slug) {
+          const found = data.find(p => p.slug === slug);
+          if (found) { setSelected(found); setView("detail"); }
+        }
+      }
     } catch (e) {
       console.error("Load error:", e);
     } finally {
@@ -134,7 +160,23 @@ const fetchAndSaveImages = async () => {
     }
   }, []);
 
-  useEffect(() => { loadPlants(); fetchAndSaveImages(); }, [loadPlants]);
+  useEffect(() => {
+    loadPlants();
+    fetchAndSaveImages();
+    const onPop = () => {
+      const slug = getSlugFromUrl();
+      if (slug && plants.length > 0) {
+        const found = plants.find(p => p.slug === slug);
+        if (found) { setSelected(found); setView("detail"); }
+        else { setView("catalog"); setSelected(null); }
+      } else {
+        setView("catalog");
+        setSelected(null);
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [loadPlants]);
 
   const types = useMemo(() => ["All", ...Array.from(new Set(plants.map(p => p.category).filter(Boolean))).sort()], [plants]);
   const diffs = ["All", "Very Easy", "Easy", "Moderate", "Hard", "Expert"];
@@ -148,7 +190,6 @@ const fetchAndSaveImages = async () => {
       const mx = filterTox === "All" || p.toxicity === filterTox;
       return ms && mt && md && mx;
     });
-    // eslint-disable-next-line
     return [...list].sort((a, b) => {
       if (sortBy === "name") return (a.common_name || "").localeCompare(b.common_name || "");
       if (sortBy === "difficulty") return diffs.indexOf(a.difficulty) - diffs.indexOf(b.difficulty);
@@ -166,7 +207,21 @@ const fetchAndSaveImages = async () => {
   };
   const isWished = id => wishlist.some(w => w.id === id);
   const isCompared = id => compareList.some(c => c.id === id);
-  const openPlant = p => { setSelected(p); setView("detail"); setActiveTab("varieties"); };
+
+  const openPlant = p => {
+    setSelected(p);
+    setView("detail");
+    setActiveTab("varieties");
+    navigateTo(`/plant/${p.slug}`);
+    document.title = `${p.common_name} — Cultivar`;
+  };
+
+  const goHome = () => {
+    setView("catalog");
+    setSelected(null);
+    navigateTo("/");
+    document.title = "Cultivar — Plant Intelligence Database";
+  };
 
   return (
     <div style={{ fontFamily: "'DM Sans',sans-serif", background: "var(--bg)", minHeight: "100vh", color: "var(--ink)" }}>
@@ -197,7 +252,7 @@ const fetchAndSaveImages = async () => {
 
       <header className="hero" style={{ position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 0 rgba(255,255,255,0.06),0 4px 24px rgba(0,0,0,0.25)" }}>
         <div style={{ maxWidth: 920, margin: "0 auto", padding: "0 16px", height: 58, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={() => setView("catalog")}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={goHome}>
             <div style={{ width: 32, height: 32, borderRadius: 9, background: "linear-gradient(135deg,#52b788,#2d6a4f)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(82,183,136,0.4)" }}>
               <Icon n="leaf" s={16} />
             </div>
@@ -217,7 +272,7 @@ const fetchAndSaveImages = async () => {
                 { id: "compare", label: compareList.length ? `Compare · ${compareList.length}` : "Compare" },
                 { id: "wishlist", label: wishlist.length ? `Saved · ${wishlist.length}` : "Saved" },
               ].map(t => (
-                <button key={t.id} className={`btn pill ${view === t.id ? "on" : ""}`} onClick={() => setView(t.id)}
+                <button key={t.id} className={`btn pill ${view === t.id ? "on" : ""}`} onClick={() => { setView(t.id); if (t.id === "catalog") goHome(); }}
                   style={{ color: view === t.id ? "#ffffff" : "rgba(255,255,255,0.55)" }}>
                   {t.label}
                 </button>
@@ -305,7 +360,7 @@ const fetchAndSaveImages = async () => {
         )}
 
         {view === "detail" && selected && (
-          <PlantDetail plant={selected} onBack={() => setView("catalog")} onWish={toggleWish} onCompare={toggleCompare} wished={isWished(selected.id)} compared={isCompared(selected.id)} activeTab={activeTab} setActiveTab={setActiveTab} />
+          <PlantDetail plant={selected} onBack={goHome} onWish={toggleWish} onCompare={toggleCompare} wished={isWished(selected.id)} compared={isCompared(selected.id)} activeTab={activeTab} setActiveTab={setActiveTab} />
         )}
 
         {view === "compare" && (
@@ -348,10 +403,10 @@ function PlantCard({ plant, onOpen, onWish, onCompare, wished, compared }) {
           </button>
         </div>
         {plant.image_url ? (
-  <img src={plant.image_url} alt={plant.common_name} style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: "var(--radius-sm)", marginBottom: 8 }} />
-) : (
-  <div style={{ fontSize: 34, marginBottom: 8, lineHeight: 1 }}>{plant.emoji}</div>
-)}
+          <img src={plant.image_url} alt={plant.common_name} style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: "var(--radius-sm)", marginBottom: 8 }} />
+        ) : (
+          <div style={{ fontSize: 34, marginBottom: 8, lineHeight: 1 }}>{plant.emoji}</div>
+        )}
         <div className="wm" style={{ fontSize: 18, fontWeight: 400, color: "var(--ink)", marginBottom: 1, letterSpacing: "-0.02em" }}>{plant.common_name}</div>
         <div style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink3)", marginBottom: 10 }}>{plant.scientific_name}</div>
         <p style={{ fontSize: 12, color: "var(--ink2)", lineHeight: 1.55, marginBottom: 12, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", fontWeight: 300 }}>{plant.description}</p>
@@ -380,7 +435,7 @@ function PlantRow({ plant, onOpen, onWish, onCompare, wished, compared }) {
   return (
     <div className="lift" onClick={() => onOpen(plant)}
       style={{ background: "var(--surface)", border: `1.5px solid ${compared ? "var(--accent)" : "var(--border)"}`, borderRadius: "var(--radius-sm)", padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, boxShadow: "var(--shadow)" }}>
-      <div style={{ fontSize: 28, minWidth: 36 }}>{plant.emoji}</div>
+      <div style={{ fontSize: 28, minWidth: 36 }}>{plant.image_url ? <img src={plant.image_url} alt={plant.common_name} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 8 }} /> : plant.emoji}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <span className="wm" style={{ fontWeight: 400, fontSize: 15, letterSpacing: "-0.01em" }}>{plant.common_name}</span>
         <span style={{ fontStyle: "italic", fontSize: 12, color: "var(--ink3)", marginLeft: 8 }}>{plant.scientific_name}</span>
@@ -436,37 +491,52 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
 
   const allLocations = [...new Set(varieties.flatMap(v => v.prices.map(p => p.retailers?.name).filter(Boolean)))].sort();
 
+  const shareUrl = `${window.location.origin}/plant/${plant.slug}`;
+
   return (
     <div className="fade">
-      <button className="btn" onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--accent)", fontSize: 13, fontWeight: 500, marginBottom: 16 }}>
-        <Icon n="back" s={15} /> Back to catalog
-      </button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <button className="btn" onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--accent)", fontSize: 13, fontWeight: 500 }}>
+          <Icon n="back" s={15} /> Back to catalog
+        </button>
+        <button className="btn" onClick={() => { navigator.clipboard.writeText(shareUrl); alert("Link copied!"); }}
+          style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--ink3)", fontSize: 12, padding: "6px 12px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)" }}>
+          <Icon n="share" s={13} /> Share
+        </button>
+      </div>
 
-      <div className="hero" style={{ borderRadius: "var(--radius)", padding: "24px 20px", marginBottom: 12, position: "relative", overflow: "hidden", boxShadow: "var(--shadow-lg)" }}>
-        <div style={{ position: "absolute", right: -10, top: -20, fontSize: 130, opacity: 0.07, pointerEvents: "none" }}>{plant.emoji}</div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 46, marginBottom: 8, lineHeight: 1 }}>{plant.emoji}</div>
-            <h1 className="wm" style={{ fontSize: 28, fontWeight: 400, color: "#fff", letterSpacing: "-0.03em", marginBottom: 3 }}>{plant.common_name}</h1>
-            <div style={{ fontSize: 13, fontStyle: "italic", color: "rgba(255,255,255,0.5)", marginBottom: 10 }}>{plant.scientific_name}</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <span style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: 99, padding: "3px 10px", fontSize: 12, color: "rgba(255,255,255,0.85)" }}>{plant.category}</span>
-              <span style={{ background: `${dc.dot}33`, border: `1px solid ${dc.dot}55`, borderRadius: 99, padding: "3px 10px", fontSize: 12, color: "rgba(255,255,255,0.9)", fontWeight: 500 }}>{plant.difficulty}</span>
-              <span style={{ background: plant.toxicity === "Pet Safe" ? "rgba(82,183,136,0.2)" : "rgba(193,57,43,0.2)", border: `1px solid ${plant.toxicity === "Pet Safe" ? "rgba(82,183,136,0.4)" : "rgba(193,57,43,0.4)"}`, borderRadius: 99, padding: "3px 10px", fontSize: 12, color: "rgba(255,255,255,0.85)" }}>
-                {plant.toxicity === "Pet Safe" ? "🐾 Pet Safe" : "⚠️ " + plant.toxicity}
-              </span>
+      <div className="hero" style={{ borderRadius: "var(--radius)", overflow: "hidden", marginBottom: 12, boxShadow: "var(--shadow-lg)" }}>
+        {plant.image_url && (
+          <div style={{ height: 220, overflow: "hidden", position: "relative" }}>
+            <img src={plant.image_url} alt={plant.common_name} style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.6 }} />
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, transparent 40%, rgba(15,35,24,0.95))" }} />
+          </div>
+        )}
+        <div style={{ padding: "20px 20px 24px", position: "relative" }}>
+          {!plant.image_url && <div style={{ fontSize: 46, marginBottom: 8, lineHeight: 1 }}>{plant.emoji}</div>}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div style={{ flex: 1 }}>
+              <h1 className="wm" style={{ fontSize: 28, fontWeight: 400, color: "#fff", letterSpacing: "-0.03em", marginBottom: 3 }}>{plant.common_name}</h1>
+              <div style={{ fontSize: 13, fontStyle: "italic", color: "rgba(255,255,255,0.5)", marginBottom: 10 }}>{plant.scientific_name}</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <span style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.18)", borderRadius: 99, padding: "3px 10px", fontSize: 12, color: "rgba(255,255,255,0.85)" }}>{plant.category}</span>
+                <span style={{ background: `${dc.dot}33`, border: `1px solid ${dc.dot}55`, borderRadius: 99, padding: "3px 10px", fontSize: 12, color: "rgba(255,255,255,0.9)", fontWeight: 500 }}>{plant.difficulty}</span>
+                <span style={{ background: plant.toxicity === "Pet Safe" ? "rgba(82,183,136,0.2)" : "rgba(193,57,43,0.2)", border: `1px solid ${plant.toxicity === "Pet Safe" ? "rgba(82,183,136,0.4)" : "rgba(193,57,43,0.4)"}`, borderRadius: 99, padding: "3px 10px", fontSize: 12, color: "rgba(255,255,255,0.85)" }}>
+                  {plant.toxicity === "Pet Safe" ? "🐾 Pet Safe" : "⚠️ " + plant.toxicity}
+                </span>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 7, flexShrink: 0 }}>
+              <button className="btn" onClick={() => onWish(plant)} style={{ width: 38, height: 38, borderRadius: "var(--radius-sm)", background: wished ? "rgba(193,57,43,0.3)" : "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Icon n="heart" s={16} />
+              </button>
+              <button className="btn" onClick={() => onCompare(plant)} style={{ width: 38, height: 38, borderRadius: "var(--radius-sm)", background: compared ? "rgba(82,183,136,0.3)" : "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Icon n="compare" s={16} />
+              </button>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 7, flexShrink: 0 }}>
-            <button className="btn" onClick={() => onWish(plant)} style={{ width: 38, height: 38, borderRadius: "var(--radius-sm)", background: wished ? "rgba(193,57,43,0.3)" : "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Icon n="heart" s={16} />
-            </button>
-            <button className="btn" onClick={() => onCompare(plant)} style={{ width: 38, height: 38, borderRadius: "var(--radius-sm)", background: compared ? "rgba(82,183,136,0.3)" : "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Icon n="compare" s={16} />
-            </button>
-          </div>
+          <p style={{ marginTop: 16, fontSize: 14, color: "rgba(255,255,255,0.65)", lineHeight: 1.65, maxWidth: 540, fontWeight: 300 }}>{plant.description}</p>
         </div>
-        <p style={{ marginTop: 16, fontSize: 14, color: "rgba(255,255,255,0.65)", lineHeight: 1.65, maxWidth: 540, fontWeight: 300 }}>{plant.description}</p>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 12 }}>
@@ -486,7 +556,7 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
       )}
 
       <div style={{ borderBottom: "1px solid var(--border)", marginBottom: 14, display: "flex" }}>
-        {[["varieties", "Varieties"], ["locations", "Where to Buy"], ["traits", "Plant Traits"]].map(([id, label]) => (
+        {[["varieties", "Varieties & Prices"], ["locations", "Where to Buy"], ["traits", "Plant Traits"]].map(([id, label]) => (
           <button key={id} className={`tab ${activeTab === id ? "on" : ""}`} onClick={() => setActiveTab(id)}>{label}</button>
         ))}
       </div>
@@ -504,6 +574,7 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {varieties.map((v, i) => {
                 const minPrice = v.prices.length ? Math.min(...v.prices.map(p => p.price_usd || 999)) : null;
+                const maxPrice = v.prices.length ? Math.max(...v.prices.map(p => p.price_usd || 0)) : null;
                 const inStock = v.prices.some(p => p.in_stock);
                 return (
                   <div key={i} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "12px 14px", boxShadow: "var(--shadow)" }}>
@@ -513,9 +584,13 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
                         <RarityBadge rarity={v.rarity} />
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        {minPrice ? <div style={{ fontSize: 20, fontWeight: 700, color: "var(--accent)", letterSpacing: "-0.02em" }}>${minPrice}</div> : <div style={{ fontSize: 12, color: "var(--ink3)" }}>Price TBA</div>}
+                        {minPrice && minPrice < 999 ? (
+                          <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent)", letterSpacing: "-0.02em" }}>
+                            ${minPrice}{maxPrice && maxPrice !== minPrice ? ` – $${maxPrice}` : ""}
+                          </div>
+                        ) : <div style={{ fontSize: 12, color: "var(--ink3)" }}>Price TBA</div>}
                         <div style={{ fontSize: 11, color: inStock ? "var(--accent2)" : "var(--ink3)", fontWeight: 500 }}>
-                          {v.prices.length ? (inStock ? "● In Stock" : "○ Out of Stock") : "No price data"}
+                          {v.prices.length ? (inStock ? "● In Stock" : "○ Out of Stock") : ""}
                         </div>
                       </div>
                     </div>
@@ -524,9 +599,9 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
                       <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                         <Icon n="map" s={11} />
                         {v.prices.map((p, pi) => p.retailers?.name && (
-                          <span key={pi} onClick={() => window.open(RETAILER_LINKS[p.retailers.name] || `https://www.google.com/search?q=${encodeURIComponent(p.retailers.name + ' ' + plant.common_name)}`, '_blank')}
+                          <span key={pi} onClick={() => window.open(RETAILER_LINKS[p.retailers.name] || `https://www.google.com/search?q=${encodeURIComponent(p.retailers.name + " " + plant.common_name)}`, "_blank")}
                             style={{ fontSize: 11, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "2px 8px", color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}>
-                            {p.retailers.name}
+                            {p.retailers.name} — ${p.price_usd}
                           </span>
                         ))}
                       </div>
@@ -550,7 +625,7 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
                 const inStock = avail.filter(v => v.prices.some(p => p.retailers?.name === loc && p.in_stock));
                 return (
                   <div key={loc} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12, boxShadow: "var(--shadow)" }}>
-                    <div onClick={() => window.open(RETAILER_LINKS[loc] || `https://www.google.com/search?q=${encodeURIComponent(loc)}`, '_blank')}
+                    <div onClick={() => window.open(RETAILER_LINKS[loc] || `https://www.google.com/search?q=${encodeURIComponent(loc + " " + plant.common_name)}`, "_blank")}
                       style={{ fontWeight: 600, fontSize: 13, color: "var(--accent)", marginBottom: 3, cursor: "pointer", textDecoration: "underline" }}>{loc}</div>
                     <div style={{ fontSize: 11, color: "var(--ink3)", marginBottom: 8 }}>{avail.length} variet{avail.length === 1 ? "y" : "ies"} · {inStock.length} in stock</div>
                     {avail.map(v => {
@@ -626,7 +701,7 @@ function CompareView({ plants, onRemove, onOpen, allPlants, onAdd }) {
   return (
     <div className="fade">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <h2 className="wm" style={{ fontSize: 24, fontWeight: 400, letterSpacing: "-0.02em" }}>Compare</h2>
+        <h2 className="wm" style={{ fontSize: 24, fontWeight: 400, letterSpacing: "-0.02em" }}>Compare Plants</h2>
         {plants.length < 3 && (
           <div style={{ position: "relative" }}>
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="Add plant…"
@@ -691,16 +766,19 @@ function WishlistView({ plants, onOpen, onRemove }) {
       <h2 className="wm" style={{ fontSize: 24, fontWeight: 400, letterSpacing: "-0.02em", marginBottom: 16 }}>Saved Plants</h2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 12 }}>
         {plants.map(p => (
-          <div key={p.id} className="lift" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 14, boxShadow: "var(--shadow)", position: "relative", cursor: "pointer" }} onClick={() => onOpen(p)}>
-            <button className="btn" onClick={e => { e.stopPropagation(); onRemove(p.id); }}
-              style={{ position: "absolute", top: 10, right: 10, width: 26, height: 26, borderRadius: 6, background: "var(--red-bg)", border: "1px solid #f0cccc", color: "var(--red)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Icon n="x" s={12} />
-            </button>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>{p.emoji}</div>
-            <div className="wm" style={{ fontSize: 16, fontWeight: 400, letterSpacing: "-0.01em", marginBottom: 2 }}>{p.common_name}</div>
-            <div style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink3)", marginBottom: 10 }}>{p.scientific_name}</div>
-            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-              {p.tags?.slice(0, 3).map(t => <span key={t} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--ink3)" }}>#{t}</span>)}
+          <div key={p.id} className="lift" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", overflow: "hidden", boxShadow: "var(--shadow)", position: "relative", cursor: "pointer" }} onClick={() => onOpen(p)}>
+            {p.image_url && <img src={p.image_url} alt={p.common_name} style={{ width: "100%", height: 120, objectFit: "cover" }} />}
+            <div style={{ padding: 14 }}>
+              <button className="btn" onClick={e => { e.stopPropagation(); onRemove(p.id); }}
+                style={{ position: "absolute", top: 10, right: 10, width: 26, height: 26, borderRadius: 6, background: "var(--red-bg)", border: "1px solid #f0cccc", color: "var(--red)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Icon n="x" s={12} />
+              </button>
+              {!p.image_url && <div style={{ fontSize: 32, marginBottom: 8 }}>{p.emoji}</div>}
+              <div className="wm" style={{ fontSize: 16, fontWeight: 400, letterSpacing: "-0.01em", marginBottom: 2 }}>{p.common_name}</div>
+              <div style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink3)", marginBottom: 10 }}>{p.scientific_name}</div>
+              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                {p.tags?.slice(0, 3).map(t => <span key={t} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--ink3)" }}>#{t}</span>)}
+              </div>
             </div>
           </div>
         ))}
