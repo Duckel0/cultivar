@@ -673,7 +673,69 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
     </div>
   );
 }
-
+{activeTab === "care" && (
+  <div className="fade" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    {plant.care_notes && (
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 20 }}>💧</span>
+          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Watering & General Care</span>
+        </div>
+        <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.care_notes}</p>
+      </div>
+    )}
+    {plant.soil && (
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 20 }}>🪴</span>
+          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Soil & Potting</span>
+        </div>
+        <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.soil}</p>
+      </div>
+    )}
+    {plant.fertilizer && (
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 20 }}>🌿</span>
+          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Fertilizing</span>
+        </div>
+        <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.fertilizer}</p>
+      </div>
+    )}
+    {plant.propagation && (
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 20 }}>✂️</span>
+          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Propagation</span>
+        </div>
+        <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.propagation}</p>
+      </div>
+    )}
+    {plant.temperature && (
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 20 }}>🌡️</span>
+          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Temperature & Humidity</span>
+        </div>
+        <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.temperature}</p>
+      </div>
+    )}
+    {plant.common_problems && (
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 20 }}>🔍</span>
+          <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Common Problems</span>
+        </div>
+        <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.common_problems}</p>
+      </div>
+    )}
+    {!plant.care_notes && !plant.soil && (
+      <div style={{ textAlign: "center", padding: 32, color: "var(--ink3)", fontSize: 13 }}>
+        Detailed care guide coming soon for this plant.
+      </div>
+    )}
+  </div>
+)}
 function CompareView({ plants, onRemove, onOpen, allPlants, onAdd }) {
   const [q, setQ] = useState("");
   const sugg = allPlants.filter(p => !plants.find(c => c.id === p.id) && p.common_name?.toLowerCase().includes(q.toLowerCase())).slice(0, 5);
