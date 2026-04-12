@@ -388,7 +388,8 @@ function RarityBadge({ rarity }) {
 function PlantCard({ plant, onOpen, onWish, onCompare, wished, compared }) {
   const dc = DIFF_CONFIG[plant.difficulty] || DIFF_CONFIG["Easy"];
   return (
-    <div className="lift" onClick={() => onOpen(plant)}
+    <a href={`/plant/${plant.slug}`} onClick={e => { e.preventDefault(); onOpen(plant); }} style={{ textDecoration: "none", color: "inherit", display: "block" }}
+    className="lift"
       style={{ background: "var(--surface)", border: `1.5px solid ${compared ? "var(--accent)" : "var(--border)"}`, borderRadius: "var(--radius)", overflow: "hidden", boxShadow: compared ? "0 0 0 3px var(--accent-bg)" : "var(--shadow)", position: "relative" }}>
       <div style={{ height: 3, background: `linear-gradient(90deg,${dc.dot},${dc.dot}44)` }} />
       <div style={{ padding: "14px 14px 12px" }}>
