@@ -557,7 +557,7 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
       )}
 
       <div style={{ borderBottom: "1px solid var(--border)", marginBottom: 14, display: "flex" }}>
-        {[["varieties", "Varieties & Prices"], ["locations", "Where to Buy"], ["traits", "Plant Traits"]].map(([id, label]) => (
+        {[["varieties", "Varieties & Prices"], ["locations", "Where to Buy"], ["traits", "Plant Traits"], ["care", "Care Guide"]].map(([id, label]) => (
           <button key={id} className={`tab ${activeTab === id ? "on" : ""}`} onClick={() => setActiveTab(id)}>{label}</button>
         ))}
       </div>
