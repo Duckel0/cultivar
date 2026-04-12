@@ -212,14 +212,14 @@ export default function Cultivar() {
     setSelected(p);
     setView("detail");
     setActiveTab("varieties");
-    navigateTo(`/plant/${p.slug}`);
+    window.history.pushState({}, "", `/plant/${p.slug}`);
     document.title = `${p.common_name} — Cultivar`;
   };
 
   const goHome = () => {
     setView("catalog");
     setSelected(null);
-    navigateTo("/");
+    window.history.pushState({}, "", "/");
     document.title = "Cultivar — Plant Intelligence Database";
   };
 
