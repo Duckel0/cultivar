@@ -190,7 +190,11 @@ export default function Cultivar() {
       const mt = filterType === "All" || p.category === filterType;
       const md = filterDiff === "All" || p.difficulty === filterDiff;
       const mx = filterTox === "All" || p.toxicity === filterTox;
-      return ms && mt && md && mx;
+      const mtr = filterTrait === "All" || 
+        (filterTrait === "low_light" && p.low_light) ||
+        (filterTrait === "air_purifying" && p.air_purifying) ||
+        (filterTrait === "edible" && p.edible);
+      return ms && mt && md && mx && mtr;
     });
     return [...list].sort((a, b) => {
       if (sortBy === "name") return (a.common_name || "").localeCompare(b.common_name || "");
