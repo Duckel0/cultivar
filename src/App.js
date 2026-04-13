@@ -5,26 +5,26 @@ const SUPABASE_URL = "https://ewyfhousutslimzwoflk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWZob3VzdXRzbGltendvZmxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NzQ1OTksImV4cCI6MjA5MTM1MDU5OX0.SMq04MDpT-FLSHbWA6i_2meJ56cJfITTy4ig37K7R-s";
 const UNSPLASH_KEY = "l-briROT5H2QN8KZgJzYE0U9O06uhe9HKUKyuy75VqE";
 
-const RETAILER_LINKS = {
-  "Amazon": "https://www.amazon.com/s?k=houseplants&tag=thecultivar-20",
-  "Home Depot": "https://www.homedepot.com/s/houseplants",
-  "Etsy": "https://www.etsy.com/search?q=rare+houseplants",
-  "Lowe's": "https://www.lowes.com/search?searchTerm=houseplants",
-  "Walmart": "https://www.walmart.com/search?q=houseplants",
-  "IKEA": "https://www.ikea.com/us/en/search/?q=plants",
-  "Trader Joe's": "https://www.traderjoes.com",
-  "Costa Farms": "https://costafarms.com",
-  "Rare Rootz": "https://rarerootz.com",
-  "Logee's": "https://logees.com",
-  "Steve's Leaves": "https://stevesleaves.com",
-  "California Carnivores": "https://californiacarnivores.com",
-  "Predatory Plants": "https://predatoryplants.com",
-  "Pistils Nursery": "https://pistilsnursery.com",
-  "Leaf & Clay": "https://leafandclay.com",
-  "Mountain Crest Gardens": "https://mountaincrestgardens.com",
-  "Bloomscape": "https://bloomscape.com",
-  "Plantvine": "https://plantvine.com",
-  "Nature Hills": "https://naturehills.com",
+const RETAILER_LINKS = const RETAILER_LINKS = {
+  "Amazon": (name) => `https://www.amazon.com/s?k=${encodeURIComponent(name + " plant")}&tag=thecultivar-20`,
+  "Home Depot": (name) => `https://www.homedepot.com/s/${encodeURIComponent(name)}`,
+  "Etsy": (name) => `https://www.etsy.com/search?q=${encodeURIComponent(name + " plant")}`,
+  "Lowe's": (name) => `https://www.lowes.com/search?searchTerm=${encodeURIComponent(name)}`,
+  "Walmart": (name) => `https://www.walmart.com/search?q=${encodeURIComponent(name + " plant")}`,
+  "Costa Farms": (name) => `https://costafarms.com/search?q=${encodeURIComponent(name)}`,
+  "Bloomscape": (name) => `https://bloomscape.com/search/?search=${encodeURIComponent(name)}`,
+  "Leaf & Clay": (name) => `https://leafandclay.com/search?q=${encodeURIComponent(name)}`,
+  "Rare Rootz": (name) => `https://rarerootz.com/search?q=${encodeURIComponent(name)}`,
+  "Logee's": (name) => `https://logees.com/search?q=${encodeURIComponent(name)}`,
+  "Steve's Leaves": (name) => `https://stevesleaves.com/search?q=${encodeURIComponent(name)}`,
+  "California Carnivores": (name) => `https://californiacarnivores.com/search?q=${encodeURIComponent(name)}`,
+  "Predatory Plants": (name) => `https://predatoryplants.com/search?q=${encodeURIComponent(name)}`,
+  "Pistils Nursery": (name) => `https://pistilsnursery.com/search?q=${encodeURIComponent(name)}`,
+  "Mountain Crest Gardens": (name) => `https://mountaincrestgardens.com/search?q=${encodeURIComponent(name)}`,
+  "Plantvine": (name) => `https://plantvine.com/search?q=${encodeURIComponent(name)}`,
+  "Nature Hills": (name) => `https://naturehills.com/search?q=${encodeURIComponent(name)}`,
+  "IKEA": (name) => `https://www.ikea.com/us/en/search/?q=${encodeURIComponent(name)}`,
+  "Trader Joe's": (name) => `https://www.traderjoes.com/home/products/category/plants`,
 };
 
 const query = async (table, options = {}) => {
