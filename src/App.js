@@ -318,7 +318,7 @@ export default function Cultivar() {
                       { label: "Category", val: filterType, set: setFilterType, opts: types },
                       { label: "Difficulty", val: filterDiff, set: setFilterDiff, opts: diffs },
                       { label: "Safety", val: filterTox, set: setFilterTox, opts: ["All", "Pet Safe", "Toxic to Pets", "Toxic to Both"] },
-                      { label: "Sort", val: sortBy, set: setSortBy, opts: [["name", "Name A–Z"], ["difficulty", "Easiest first"]], isTuple: true },
+                      { label: "Sort", val: sortBy, set: setSortBy, opts: [["name", "Name A–Z"], ["difficulty", "Easiest first"], ["difficulty_desc", "Hardest first"], ["rare", "Rare first"], ["category", "Category"]], isTuple: true },
                     ].map(f => (
                       <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 6, flex: "1 1 130px" }}>
                         <span style={{ fontSize: 11, color: "var(--ink3)", fontWeight: 500, whiteSpace: "nowrap" }}>{f.label}</span>
