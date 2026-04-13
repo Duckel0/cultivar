@@ -306,7 +306,34 @@ export default function Cultivar() {
                 <div style={{ fontSize: 14 }}>Loading your plant database…</div>
               </div>
             )}
-
+{!loading && plants.length > 0 && (
+  <div style={{ marginBottom: 20 }}>
+    <p style={{ fontSize: 11, color: "var(--ink3)", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 500, marginBottom: 10 }}>Browse Collections</p>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 8 }}>
+      {[
+        { emoji: "🐾", label: "Pet Safe", filter: () => { setFilterTox("Pet Safe"); setSearch(""); setFilterType("All"); setFilterDiff("All"); }, count: plants.filter(p => p.toxicity === "Pet Safe").length },
+        { emoji: "💡", label: "Beginner Friendly", filter: () => { setFilterDiff("Very Easy"); setSearch(""); setFilterType("All"); setFilterTox("All"); }, count: plants.filter(p => p.difficulty === "Very Easy").length },
+        { emoji: "✦", label: "Rare Collectors", filter: () => { setFilterType("Rare & Collector"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Rare & Collector").length },
+        { emoji: "🌑", label: "Low Light", filter: () => { setSearch(""); setFilterType("All"); setFilterDiff("All"); setFilterTox("All"); setSortBy("name"); setPlants(prev => prev); }, count: plants.filter(p => p.low_light).length },
+        { emoji: "🌿", label: "Air Purifying", filter: () => { setSearch(""); setFilterType("All"); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.air_purifying).length },
+        { emoji: "🍽️", label: "Edible Plants", filter: () => { setSearch(""); setFilterType("All"); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.edible).length },
+        { emoji: "🌵", label: "Succulents", filter: () => { setFilterType("Succulent"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Succulent").length },
+        { emoji: "🪴", label: "Houseplants", filter: () => { setFilterType("Houseplant"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Houseplant").length },
+        { emoji: "🌺", label: "Orchids", filter: () => { setFilterType("Orchid"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Orchid").length },
+        { emoji: "🪲", label: "Carnivorous", filter: () => { setFilterType("Carnivorous"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Carnivorous").length },
+        { emoji: "💧", label: "Aquatic", filter: () => { setFilterType("Aquatic"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Aquatic").length },
+        { emoji: "🎋", label: "Bonsai", filter: () => { setFilterType("Bonsai"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Bonsai").length },
+      ].map(c => (
+        <button key={c.label} className="btn lift" onClick={c.filter}
+          style={{ background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "10px 12px", textAlign: "left", boxShadow: "var(--shadow)" }}>
+          <div style={{ fontSize: 20, marginBottom: 4 }}>{c.emoji}</div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink)", marginBottom: 2 }}>{c.label}</div>
+          <div style={{ fontSize: 11, color: "var(--ink3)" }}>{c.count} plants</div>
+        </button>
+      ))}
+    </div>
+  </div>
+)}
             {!loading && plants.length > 0 && (
               <>
                 <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 14, marginBottom: 16, boxShadow: "var(--shadow)" }}>
