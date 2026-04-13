@@ -5,26 +5,30 @@ const SUPABASE_URL = "https://ewyfhousutslimzwoflk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWZob3VzdXRzbGltendvZmxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NzQ1OTksImV4cCI6MjA5MTM1MDU5OX0.SMq04MDpT-FLSHbWA6i_2meJ56cJfITTy4ig37K7R-s";
 const UNSPLASH_KEY = "l-briROT5H2QN8KZgJzYE0U9O06uhe9HKUKyuy75VqE";
 
-const RETAILER_LINKS = {
-  "Amazon": (name) => `https://www.amazon.com/s?k=${encodeURIComponent(name + " plant")}&tag=thecultivar-20`,
-  "Home Depot": (name) => `https://www.homedepot.com/s/${encodeURIComponent(name)}`,
-  "Etsy": (name) => `https://www.etsy.com/search?q=${encodeURIComponent(name + " plant")}`,
-  "Lowe's": (name) => `https://www.lowes.com/search?searchTerm=${encodeURIComponent(name)}`,
-  "Walmart": (name) => `https://www.walmart.com/search?q=${encodeURIComponent(name + " plant")}`,
-  "Costa Farms": (name) => `https://costafarms.com/search?q=${encodeURIComponent(name)}`,
-  "Bloomscape": (name) => `https://bloomscape.com/search/?search=${encodeURIComponent(name)}`,
-  "Leaf & Clay": (name) => `https://leafandclay.com/search?q=${encodeURIComponent(name)}`,
-  "Rare Rootz": (name) => `https://rarerootz.com/search?q=${encodeURIComponent(name)}`,
-  "Logee's": (name) => `https://logees.com/search?q=${encodeURIComponent(name)}`,
-  "Steve's Leaves": (name) => `https://stevesleaves.com/search?q=${encodeURIComponent(name)}`,
-  "California Carnivores": (name) => `https://californiacarnivores.com/search?q=${encodeURIComponent(name)}`,
-  "Predatory Plants": (name) => `https://predatoryplants.com/search?q=${encodeURIComponent(name)}`,
-  "Pistils Nursery": (name) => `https://pistilsnursery.com/search?q=${encodeURIComponent(name)}`,
-  "Mountain Crest Gardens": (name) => `https://mountaincrestgardens.com/search?q=${encodeURIComponent(name)}`,
-  "Plantvine": (name) => `https://plantvine.com/search?q=${encodeURIComponent(name)}`,
-  "Nature Hills": (name) => `https://naturehills.com/search?q=${encodeURIComponent(name)}`,
-  "IKEA": (name) => `https://www.ikea.com/us/en/search/?q=${encodeURIComponent(name)}`,
-  "Trader Joe's": (name) => `https://www.traderjoes.com/home/products/category/plants`,
+const getRetailerUrl = (retailerName, plantName) => {
+  const encoded = encodeURIComponent(plantName + " plant");
+  const links = {
+    "Amazon": `https://www.amazon.com/s?k=${encoded}&tag=thecultivar-20`,
+    "Home Depot": `https://www.homedepot.com/s/${encodeURIComponent(plantName)}`,
+    "Etsy": `https://www.etsy.com/search?q=${encoded}`,
+    "Lowe's": `https://www.lowes.com/search?searchTerm=${encodeURIComponent(plantName)}`,
+    "Walmart": `https://www.walmart.com/search?q=${encoded}`,
+    "Costa Farms": `https://costafarms.com/search?q=${encodeURIComponent(plantName)}`,
+    "Bloomscape": `https://bloomscape.com/search/?search=${encodeURIComponent(plantName)}`,
+    "Leaf & Clay": `https://leafandclay.com/search?q=${encodeURIComponent(plantName)}`,
+    "Rare Rootz": `https://rarerootz.com/search?q=${encodeURIComponent(plantName)}`,
+    "Logee's": `https://logees.com/search?q=${encodeURIComponent(plantName)}`,
+    "Steve's Leaves": `https://stevesleaves.com/search?q=${encodeURIComponent(plantName)}`,
+    "California Carnivores": `https://californiacarnivores.com/search?q=${encodeURIComponent(plantName)}`,
+    "Predatory Plants": `https://predatoryplants.com/search?q=${encodeURIComponent(plantName)}`,
+    "Pistils Nursery": `https://pistilsnursery.com/search?q=${encodeURIComponent(plantName)}`,
+    "Mountain Crest Gardens": `https://mountaincrestgardens.com/search?q=${encodeURIComponent(plantName)}`,
+    "Plantvine": `https://plantvine.com/search?q=${encodeURIComponent(plantName)}`,
+    "Nature Hills": `https://naturehills.com/search?q=${encodeURIComponent(plantName)}`,
+    "IKEA": `https://www.ikea.com/us/en/search/?q=${encodeURIComponent(plantName)}`,
+    "Trader Joe's": `https://www.traderjoes.com/home/products/category/plants`,
+  };
+  return links[retailerName] || `https://www.google.com/search?q=${encodeURIComponent(retailerName + " " + plantName)}`;
 };
 
 const query = async (table, options = {}) => {
@@ -190,6 +194,10 @@ export default function Cultivar() {
     return [...list].sort((a, b) => {
       if (sortBy === "name") return (a.common_name || "").localeCompare(b.common_name || "");
       if (sortBy === "difficulty") return diffs.indexOf(a.difficulty) - diffs.indexOf(b.difficulty);
+      if (sortBy === "difficulty_desc") return diffs.indexOf(b.difficulty) - diffs.indexOf(a.difficulty);
+      if (sortBy === "rare") return (b.rare ? 1 : 0) - (a.rare ? 1 : 0);
+      if (sortBy === "category") return (a.category || "").localeCompare(b.category || "");
+      if (sortBy === "pet_safe") return (b.toxicity === "Pet Safe" ? 1 : 0) - (a.toxicity === "Pet Safe" ? 1 : 0);
       return 0;
     });
   }, [plants, search, filterType, filterDiff, filterTox, sortBy]);
@@ -238,17 +246,17 @@ export default function Cultivar() {
         .pill.on{background:rgba(255,255,255,0.18);border-color:rgba(255,255,255,0.3);}
         .fade{animation:fadeUp 0.3s ease forwards;}
         @keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
-        .tab{padding:8px 16px;font-size:13px;font-weight:500;color:var(--ink3);cursor:pointer;border:none;background:transparent;border-bottom:2px solid transparent;transition:all 0.15s;font-family:'DM Sans',sans-serif;}
+        .tab{padding:8px 16px;font-size:13px;font-weight:500;color:var(--ink3);cursor:pointer;border:none;background:transparent;border-bottom:2px solid transparent;transition:all 0.15s;font-family:'DM Sans',sans-serif;white-space:nowrap;}
         .tab.on{color:var(--accent);border-bottom-color:var(--accent);}
         .wm{font-family:'Fraunces',serif;font-optical-sizing:auto;}
         input,select{font-family:'DM Sans',sans-serif;}
         input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;}
-        .hero{background:linear-gradient(135deg,#0f2318 0%,#1a3a28 40%,#152e1f 100%);}
+        .hero-bg{background:linear-gradient(135deg,#0f2318 0%,#1a3a28 40%,#152e1f 100%);}
         @keyframes spin{to{transform:rotate(360deg);}}
         .plant-card-link{text-decoration:none;color:inherit;display:block;}
       `}</style>
 
-      <header className="hero" style={{ position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 0 rgba(255,255,255,0.06),0 4px 24px rgba(0,0,0,0.25)" }}>
+      <header className="hero-bg" style={{ position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 0 rgba(255,255,255,0.06),0 4px 24px rgba(0,0,0,0.25)" }}>
         <div style={{ maxWidth: 920, margin: "0 auto", padding: "0 16px", height: 58, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={goHome}>
             <div style={{ width: 32, height: 32, borderRadius: 9, background: "linear-gradient(135deg,#52b788,#2d6a4f)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(82,183,136,0.4)" }}>
@@ -318,7 +326,7 @@ export default function Cultivar() {
                       { label: "Category", val: filterType, set: setFilterType, opts: types },
                       { label: "Difficulty", val: filterDiff, set: setFilterDiff, opts: diffs },
                       { label: "Safety", val: filterTox, set: setFilterTox, opts: ["All", "Pet Safe", "Toxic to Pets", "Toxic to Both"] },
-                      { label: "Sort", val: sortBy, set: setSortBy, opts: [["name", "Name A–Z"], ["difficulty", "Easiest first"], ["difficulty_desc", "Hardest first"], ["rare", "Rare first"], ["category", "Category"]], isTuple: true },
+                      { label: "Sort", val: sortBy, set: setSortBy, opts: [["name","Name A–Z"],["difficulty","Easiest first"],["difficulty_desc","Hardest first"],["rare","Rare first"],["pet_safe","Pet safe first"],["category","By category"]], isTuple: true },
                     ].map(f => (
                       <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 6, flex: "1 1 130px" }}>
                         <span style={{ fontSize: 11, color: "var(--ink3)", fontWeight: 500, whiteSpace: "nowrap" }}>{f.label}</span>
@@ -504,7 +512,7 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
         </button>
       </div>
 
-      <div className="hero" style={{ borderRadius: "var(--radius)", overflow: "hidden", marginBottom: 12, boxShadow: "var(--shadow-lg)" }}>
+      <div className="hero-bg" style={{ borderRadius: "var(--radius)", overflow: "hidden", marginBottom: 12, boxShadow: "var(--shadow-lg)" }}>
         {plant.image_url && (
           <div style={{ height: 220, overflow: "hidden", position: "relative" }}>
             <img src={plant.image_url} alt={plant.common_name} style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.6 }} />
@@ -556,7 +564,7 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
 
       <div style={{ borderBottom: "1px solid var(--border)", marginBottom: 14, display: "flex", overflowX: "auto" }}>
         {[["varieties", "Varieties & Prices"], ["locations", "Where to Buy"], ["care", "Care Guide"], ["traits", "Plant Traits"]].map(([id, label]) => (
-          <button key={id} className={`tab ${activeTab === id ? "on" : ""}`} onClick={() => setActiveTab(id)} style={{ whiteSpace: "nowrap" }}>{label}</button>
+          <button key={id} className={`tab ${activeTab === id ? "on" : ""}`} onClick={() => setActiveTab(id)}>{label}</button>
         ))}
       </div>
 
@@ -598,7 +606,7 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
                       <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                         <Icon n="map" s={11} />
                         {v.prices.map((p, pi) => p.retailers?.name && (
-                          <span key={pi} onClick={() => window.open(RETAILER_LINKS[p.retailers.name] || `https://www.google.com/search?q=${encodeURIComponent(p.retailers.name + " " + plant.common_name)}`, "_blank")}
+                          <span key={pi} onClick={() => window.open(getRetailerUrl(p.retailers.name, plant.common_name), "_blank")}
                             style={{ fontSize: 11, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "2px 8px", color: "var(--accent)", cursor: "pointer", textDecoration: "underline" }}>
                             {p.retailers.name} — ${p.price_usd}
                           </span>
@@ -624,7 +632,7 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
                 const inStock = avail.filter(v => v.prices.some(p => p.retailers?.name === loc && p.in_stock));
                 return (
                   <div key={loc} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 12, boxShadow: "var(--shadow)" }}>
-                    <div onClick={() => window.open(RETAILER_LINKS[loc] || `https://www.google.com/search?q=${encodeURIComponent(loc + " " + plant.common_name)}`, "_blank")}
+                    <div onClick={() => window.open(getRetailerUrl(loc, plant.common_name), "_blank")}
                       style={{ fontWeight: 600, fontSize: 13, color: "var(--accent)", marginBottom: 3, cursor: "pointer", textDecoration: "underline" }}>{loc}</div>
                     <div style={{ fontSize: 11, color: "var(--ink3)", marginBottom: 8 }}>{avail.length} variet{avail.length === 1 ? "y" : "ies"} · {inStock.length} in stock</div>
                     {avail.map(v => {
@@ -758,6 +766,7 @@ function CompareView({ plants, onRemove, onOpen, allPlants, onAdd }) {
     { label: "Air Purifying", fn: p => p.air_purifying ? "✓ Yes" : "—" },
     { label: "Low Light", fn: p => p.low_light ? "✓ Yes" : "—" },
     { label: "Pet Safe", fn: p => p.toxicity === "Pet Safe" ? "✓ Yes" : "✗ No" },
+    { label: "Edible", fn: p => p.edible ? "✓ Yes" : "—" },
     { label: "Rare", fn: p => p.rare ? "✦ Yes" : "—" },
   ];
 
