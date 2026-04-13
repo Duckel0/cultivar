@@ -320,7 +320,7 @@ export default function Cultivar() {
         { emoji: "🐾", label: "Pet Safe", filter: () => { setFilterTox("Pet Safe"); setSearch(""); setFilterType("All"); setFilterDiff("All"); }, count: plants.filter(p => p.toxicity === "Pet Safe").length },
         { emoji: "💡", label: "Beginner Friendly", filter: () => { setFilterDiff("Very Easy"); setSearch(""); setFilterType("All"); setFilterTox("All"); }, count: plants.filter(p => p.difficulty === "Very Easy").length },
         { emoji: "✦", label: "Rare Collectors", filter: () => { setFilterType("Rare & Collector"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Rare & Collector").length },
-        { emoji: "🌑", label: "Low Light", filter: () => { setSearch(""); setFilterType("All"); setFilterDiff("All"); setFilterTox("All"); setSortBy("name"); setPlants(prev => prev); }, count: plants.filter(p => p.low_light).length },
+        { emoji: "🌑", label: "Low Light", filter: () => { setFilterTrait("low_light"); setSearch(""); setFilterType("All"); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.low_light).length },
         { emoji: "🌿", label: "Air Purifying", filter: () => { setSearch(""); setFilterType("All"); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.air_purifying).length },
         { emoji: "🍽️", label: "Edible Plants", filter: () => { setSearch(""); setFilterType("All"); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.edible).length },
         { emoji: "🌵", label: "Succulents", filter: () => { setFilterType("Succulent"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Succulent").length },
