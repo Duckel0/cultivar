@@ -5,7 +5,7 @@ const SUPABASE_URL = "https://ewyfhousutslimzwoflk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWZob3VzdXRzbGltendvZmxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NzQ1OTksImV4cCI6MjA5MTM1MDU5OX0.SMq04MDpT-FLSHbWA6i_2meJ56cJfITTy4ig37K7R-s";
 const UNSPLASH_KEY = "l-briROT5H2QN8KZgJzYE0U9O06uhe9HKUKyuy75VqE";
 
-const RETAILER_LINKS = const RETAILER_LINKS = {
+const RETAILER_LINKS = {
   "Amazon": (name) => `https://www.amazon.com/s?k=${encodeURIComponent(name + " plant")}&tag=thecultivar-20`,
   "Home Depot": (name) => `https://www.homedepot.com/s/${encodeURIComponent(name)}`,
   "Etsy": (name) => `https://www.etsy.com/search?q=${encodeURIComponent(name + " plant")}`,
