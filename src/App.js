@@ -101,6 +101,7 @@ export default function Cultivar() {
   const [filterDiff, setFilterDiff] = useState("All");
   const [filterTox, setFilterTox] = useState("All");
   const [filterTrait, setFilterTrait] = useState("All");
+  const [filterTrait, setFilterTrait] = useState("All");
   const [sortBy, setSortBy] = useState("name");
   const [layout, setLayout] = useState("grid");
   const [compareList, setCompareList] = useState([]);
