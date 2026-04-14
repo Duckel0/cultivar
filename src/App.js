@@ -37,6 +37,7 @@ const query = async (table, options = {}) => {
   if (options.filter) url += `${options.filter}&`;
   if (options.order) url += `order=${options.order}&`;
   if (options.limit) url += `limit=${options.limit}&`;
+
   const res = await fetch(url, {
     headers: {
       apikey: SUPABASE_KEY,
@@ -51,36 +52,36 @@ const query = async (table, options = {}) => {
 };
 
 const RARITY_CONFIG = {
-  "Common":         { color: "#5a8a3c", bg: "#edf5e8" },
-  "Uncommon":       { color: "#2a7a6a", bg: "#e4f5f2" },
-  "Rare":           { color: "#5a3a8a", bg: "#f0ecfa" },
-  "Very Rare":      { color: "#8a2a2a", bg: "#faeaea" },
+  "Common": { color: "#5a8a3c", bg: "#edf5e8" },
+  "Uncommon": { color: "#2a7a6a", bg: "#e4f5f2" },
+  "Rare": { color: "#5a3a8a", bg: "#f0ecfa" },
+  "Very Rare": { color: "#8a2a2a", bg: "#faeaea" },
   "Extremely Rare": { color: "#1a1a1a", bg: "#f0f0f0" },
 };
 
 const DIFF_CONFIG = {
   "Very Easy": { color: "#3d7a2a", dot: "#5aaa3c" },
-  "Easy":      { color: "#5a8a3c", dot: "#7ac44a" },
-  "Moderate":  { color: "#8a6a1a", dot: "#c49a2a" },
-  "Hard":      { color: "#8a2a2a", dot: "#c44a3c" },
-  "Expert":    { color: "#1a1a2a", dot: "#3a3a5a" },
+  "Easy": { color: "#5a8a3c", dot: "#7ac44a" },
+  "Moderate": { color: "#8a6a1a", dot: "#c49a2a" },
+  "Hard": { color: "#8a2a2a", dot: "#c44a3c" },
+  "Expert": { color: "#1a1a2a", dot: "#3a3a5a" },
 };
 
 const Icon = ({ n, s = 16 }) => {
   const d = {
-    search:  <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>,
-    leaf:    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>,
-    sun:     <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/></svg>,
-    drop:    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>,
-    heart:   <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>,
+    search: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>,
+    leaf: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>,
+    sun: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/></svg>,
+    drop: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/></svg>,
+    heart: <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>,
     compare: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>,
-    grid:    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
-    list:    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
-    back:    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="15 18 9 12 15 6"/></svg>,
-    x:       <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
-    map:     <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>,
+    grid: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
+    list: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>,
+    back: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polyline points="15 18 9 12 15 6"/></svg>,
+    x: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+    map: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>,
     sparkle: <svg width={s} height={s} viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>,
-    share:   <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>,
+    share: <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>,
   };
   return d[n] || null;
 };
@@ -107,35 +108,58 @@ export default function Cultivar() {
   const [wishlist, setWishlist] = useState([]);
   const [activeTab, setActiveTab] = useState("varieties");
 
-  const fetchAndSaveImages = async () => {
+  // Cleaned & Fixed Image Fetcher
+  const fetchAndSaveImages = useCallback(async () => {
     try {
       const plantsWithoutImages = await query("plants", {
         select: "id,common_name,scientific_name,image_url",
         filter: "image_url=is.null",
         limit: 30,
       });
-      for (const plant of plantsWithoutImages || []) {
+
+      if (!plantsWithoutImages?.length) return;
+
+      console.log(`Found ${plantsWithoutImages.length} plants without images.`);
+
+      for (const plant of plantsWithoutImages) {
         try {
-          const searchTerm = plant.scientific_name || plant.common_name; const query = plant.scientific_name    ? encodeURIComponent(plant.scientific_name)   : encodeURIComponent(plant.common_name + " plant"); const res = await fetch(`https://api.unsplash.com/search/photos?query=${query}&per_page=3&orientation=landscape&client_id=${UNSPLASH_KEY}`); const data = await res.json(); const img = data?.results?.[0]?.urls?.regular;= plant.common_name || plant.scientific_name;
-          const res = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchTerm + " plant")}&per_page=1&client_id=${UNSPLASH_KEY}`);
+          const searchTerm = plant.scientific_name || plant.common_name;
+          if (!searchTerm) continue;
+
+          const queryStr = encodeURIComponent(searchTerm + " plant");
+
+          const res = await fetch(
+            `https://api.unsplash.com/search/photos?query=${queryStr}&per_page=1&orientation=landscape&client_id=${UNSPLASH_KEY}`
+          );
+
+          if (!res.ok) continue;
+
           const data = await res.json();
-          const img = data?.results?.[0]?.urls?.regular;
-          if (img) {
+          const imgUrl = data?.results?.[0]?.urls?.regular;
+
+          if (imgUrl) {
             await fetch(`${SUPABASE_URL}/rest/v1/plants?id=eq.${plant.id}`, {
               method: "PATCH",
               headers: {
                 apikey: SUPABASE_KEY,
                 Authorization: `Bearer ${SUPABASE_KEY}`,
                 "Content-Type": "application/json",
-                "Prefer": "return=minimal",
+                Prefer: "return=minimal",
               },
-              body: JSON.stringify({ image_url: img }),
+              body: JSON.stringify({ image_url: imgUrl }),
             });
+            console.log(`✅ Image saved for: ${plant.common_name}`);
           }
-        } catch (e) { console.error(e); }
+
+          await new Promise(resolve => setTimeout(resolve, 700));
+        } catch (err) {
+          console.error(`Error processing ${plant.common_name}:`, err);
+        }
       }
-    } catch (e) { console.error(e); }
-  };
+    } catch (err) {
+      console.error("fetchAndSaveImages failed:", err);
+    }
+  }, []);
 
   const loadPlants = useCallback(async () => {
     try {
@@ -145,12 +169,16 @@ export default function Cultivar() {
         filter: "published=eq.true",
         order: "common_name.asc",
       });
+
       if (data && data.length > 0) {
         setPlants(data);
         const slug = getSlugFromUrl();
         if (slug) {
           const found = data.find(p => p.slug === slug);
-          if (found) { setSelected(found); setView("detail"); }
+          if (found) {
+            setSelected(found);
+            setView("detail");
+          }
         }
       }
     } catch (e) {
@@ -162,23 +190,29 @@ export default function Cultivar() {
 
   useEffect(() => {
     loadPlants();
-    fetchAndSaveImages();
+
+    // Only run in development to keep Vercel builds fast and safe
+    if (process.env.NODE_ENV === "development") {
+      fetchAndSaveImages();
+    }
+
     const onPop = () => {
       const slug = getSlugFromUrl();
       if (slug) {
-        setPlants(prev => {
-          const found = prev.find(p => p.slug === slug);
-          if (found) { setSelected(found); setView("detail"); }
-          return prev;
-        });
+        const found = plants.find(p => p.slug === slug);
+        if (found) {
+          setSelected(found);
+          setView("detail");
+        }
       } else {
         setView("catalog");
         setSelected(null);
       }
     };
+
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [loadPlants]);
+  }, [loadPlants, plants, fetchAndSaveImages]);
 
   const types = useMemo(() => ["All", ...Array.from(new Set(plants.map(p => p.category).filter(Boolean))).sort()], [plants]);
   const diffs = ["All", "Very Easy", "Easy", "Moderate", "Hard", "Expert"];
@@ -194,7 +228,11 @@ export default function Cultivar() {
   const filtered = useMemo(() => {
     let list = plants.filter(p => {
       const q = search.toLowerCase();
-      const ms = !q || p.common_name?.toLowerCase().includes(q) || p.scientific_name?.toLowerCase().includes(q) || p.tags?.some(t => t.includes(q));
+      const ms = !q || 
+        p.common_name?.toLowerCase().includes(q) || 
+        p.scientific_name?.toLowerCase().includes(q) || 
+        p.tags?.some(t => t.toLowerCase().includes(q));
+
       const mt = filterType === "All" || p.category === filterType;
       const md = filterDiff === "All" || p.difficulty === filterDiff;
       const mx = filterTox === "All" || p.toxicity === filterTox;
@@ -202,8 +240,10 @@ export default function Cultivar() {
         (filterTrait === "low_light" && p.low_light) ||
         (filterTrait === "air_purifying" && p.air_purifying) ||
         (filterTrait === "edible" && p.edible);
+
       return ms && mt && md && mx && mtr;
     });
+
     return [...list].sort((a, b) => {
       if (sortBy === "name") return (a.common_name || "").localeCompare(b.common_name || "");
       if (sortBy === "difficulty") return diffs.indexOf(a.difficulty) - diffs.indexOf(b.difficulty);
@@ -231,13 +271,21 @@ export default function Cultivar() {
   ], [plants]);
 
   const toggleCompare = p => {
-    if (compareList.find(c => c.id === p.id)) setCompareList(compareList.filter(c => c.id !== p.id));
-    else if (compareList.length < 3) setCompareList([...compareList, p]);
+    if (compareList.find(c => c.id === p.id)) {
+      setCompareList(compareList.filter(c => c.id !== p.id));
+    } else if (compareList.length < 3) {
+      setCompareList([...compareList, p]);
+    }
   };
+
   const toggleWish = p => {
-    if (wishlist.find(w => w.id === p.id)) setWishlist(wishlist.filter(w => w.id !== p.id));
-    else setWishlist([...wishlist, p]);
+    if (wishlist.find(w => w.id === p.id)) {
+      setWishlist(wishlist.filter(w => w.id !== p.id));
+    } else {
+      setWishlist([...wishlist, p]);
+    }
   };
+
   const isWished = id => wishlist.some(w => w.id === id);
   const isCompared = id => compareList.some(c => c.id === id);
 
@@ -306,7 +354,8 @@ export default function Cultivar() {
                 { id: "compare", label: compareList.length ? `Compare · ${compareList.length}` : "Compare" },
                 { id: "wishlist", label: wishlist.length ? `Saved · ${wishlist.length}` : "Saved" },
               ].map(t => (
-                <button key={t.id} className={`btn pill ${view === t.id ? "on" : ""}`} onClick={() => { if (t.id === "catalog") goHome(); else setView(t.id); }}
+                <button key={t.id} className={`btn pill ${view === t.id ? "on" : ""}`} 
+                  onClick={() => { if (t.id === "catalog") goHome(); else setView(t.id); }}
                   style={{ color: view === t.id ? "#ffffff" : "rgba(255,255,255,0.55)" }}>
                   {t.label}
                 </button>
@@ -363,11 +412,12 @@ export default function Cultivar() {
                       <Icon n={layout === "grid" ? "list" : "grid"} s={15} />
                     </button>
                   </div>
+
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {[
-                      { label: "Category", val: filterType, set: (v) => { setFilterType(v); setFilterTrait("All"); }, opts: types },
-                      { label: "Difficulty", val: filterDiff, set: (v) => { setFilterDiff(v); setFilterTrait("All"); }, opts: diffs },
-                      { label: "Safety", val: filterTox, set: (v) => { setFilterTox(v); setFilterTrait("All"); }, opts: ["All", "Pet Safe", "Toxic to Pets", "Toxic to Both"] },
+                      { label: "Category", val: filterType, set: setFilterType, opts: types },
+                      { label: "Difficulty", val: filterDiff, set: setFilterDiff, opts: diffs },
+                      { label: "Safety", val: filterTox, set: setFilterTox, opts: ["All", "Pet Safe", "Toxic to Pets", "Toxic to Both"] },
                       { label: "Sort", val: sortBy, set: setSortBy, opts: [["name","Name A–Z"],["difficulty","Easiest first"],["difficulty_desc","Hardest first"],["rare","Rare first"],["pet_safe","Pet safe first"],["category","By category"]], isTuple: true },
                     ].map(f => (
                       <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 6, flex: "1 1 130px" }}>
@@ -379,6 +429,7 @@ export default function Cultivar() {
                       </div>
                     ))}
                   </div>
+
                   <div style={{ marginTop: 10, fontSize: 12, color: "var(--ink3)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span>{filtered.length} result{filtered.length !== 1 ? "s" : ""}
                       {compareList.length > 0 && <span style={{ color: "var(--accent)", fontWeight: 500, marginLeft: 10 }}>· {compareList.length}/3 in compare</span>}
@@ -429,6 +480,8 @@ export default function Cultivar() {
     </div>
   );
 }
+
+// ==================== SUB COMPONENTS ====================
 
 function RarityBadge({ rarity }) {
   const c = RARITY_CONFIG[rarity] || RARITY_CONFIG["Common"];
@@ -756,46 +809,47 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
               </div>
               <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.common_problems}</p>
             </div>
-          )}{(plant.native_region || plant.bloom_season || plant.mature_height || plant.fun_fact) && (
-  <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-      <span style={{ fontSize: 20 }}>🌍</span>
-      <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Plant Profile</span>
-    </div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {plant.native_region && (
-        <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
-          <span style={{ color: "var(--ink3)", fontWeight: 500, minWidth: 100 }}>Native to</span>
-          <span style={{ color: "var(--ink2)", fontWeight: 300 }}>{plant.native_region}</span>
-        </div>
-      )}
-      {plant.bloom_season && (
-        <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
-          <span style={{ color: "var(--ink3)", fontWeight: 500, minWidth: 100 }}>Blooms</span>
-          <span style={{ color: "var(--ink2)", fontWeight: 300 }}>{plant.bloom_season}</span>
-        </div>
-      )}
-      {plant.mature_height && (
-        <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
-          <span style={{ color: "var(--ink3)", fontWeight: 500, minWidth: 100 }}>Height</span>
-          <span style={{ color: "var(--ink2)", fontWeight: 300 }}>{plant.mature_height}</span>
-        </div>
-      )}
-      {plant.companion_plants && (
-        <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
-          <span style={{ color: "var(--ink3)", fontWeight: 500, minWidth: 100 }}>Pairs With</span>
-          <span style={{ color: "var(--ink2)", fontWeight: 300 }}>{plant.companion_plants}</span>
-        </div>
-      )}
-    </div>
-    {plant.fun_fact && (
-      <div style={{ marginTop: 12, padding: "10px 12px", background: "var(--accent-bg)", borderRadius: "var(--radius-sm)", border: "1px solid var(--accent2)" }}>
-        <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>🌱 Did You Know</div>
-        <p style={{ fontSize: 12, color: "var(--ink2)", lineHeight: 1.6, fontWeight: 300 }}>{plant.fun_fact}</p>
-      </div>
-    )}
-  </div>
-)}
+          )}
+          {(plant.native_region || plant.bloom_season || plant.mature_height || plant.companion_plants || plant.fun_fact) && (
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <span style={{ fontSize: 20 }}>🌍</span>
+                <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Plant Profile</span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {plant.native_region && (
+                  <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
+                    <span style={{ color: "var(--ink3)", fontWeight: 500, minWidth: 100 }}>Native to</span>
+                    <span style={{ color: "var(--ink2)", fontWeight: 300 }}>{plant.native_region}</span>
+                  </div>
+                )}
+                {plant.bloom_season && (
+                  <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
+                    <span style={{ color: "var(--ink3)", fontWeight: 500, minWidth: 100 }}>Blooms</span>
+                    <span style={{ color: "var(--ink2)", fontWeight: 300 }}>{plant.bloom_season}</span>
+                  </div>
+                )}
+                {plant.mature_height && (
+                  <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
+                    <span style={{ color: "var(--ink3)", fontWeight: 500, minWidth: 100 }}>Height</span>
+                    <span style={{ color: "var(--ink2)", fontWeight: 300 }}>{plant.mature_height}</span>
+                  </div>
+                )}
+                {plant.companion_plants && (
+                  <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
+                    <span style={{ color: "var(--ink3)", fontWeight: 500, minWidth: 100 }}>Pairs With</span>
+                    <span style={{ color: "var(--ink2)", fontWeight: 300 }}>{plant.companion_plants}</span>
+                  </div>
+                )}
+              </div>
+              {plant.fun_fact && (
+                <div style={{ marginTop: 12, padding: "10px 12px", background: "var(--accent-bg)", borderRadius: "var(--radius-sm)", border: "1px solid var(--accent2)" }}>
+                  <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>🌱 Did You Know</div>
+                  <p style={{ fontSize: 12, color: "var(--ink2)", lineHeight: 1.6, fontWeight: 300 }}>{plant.fun_fact}</p>
+                </div>
+              )}
+            </div>
+          )}
           {!plant.care_notes && !plant.soil && !plant.fertilizer && !plant.propagation && !plant.temperature && !plant.common_problems && (
             <div style={{ textAlign: "center", padding: 32, color: "var(--ink3)", fontSize: 13 }}>
               Detailed care guide coming soon for this plant.
@@ -881,6 +935,7 @@ function CompareView({ plants, onRemove, onOpen, allPlants, onAdd }) {
           </div>
         )}
       </div>
+
       <div style={{ overflowX: "auto", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", boxShadow: "var(--shadow)" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
@@ -921,6 +976,7 @@ function WishlistView({ plants, onOpen, onRemove }) {
       <p style={{ fontSize: 14, color: "var(--ink3)", fontWeight: 300 }}>Tap the heart on any plant to save it here.</p>
     </div>
   );
+
   return (
     <div className="fade">
       <h2 className="wm" style={{ fontSize: 24, fontWeight: 400, letterSpacing: "-0.02em", marginBottom: 16 }}>Saved Plants</h2>
