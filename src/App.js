@@ -148,8 +148,8 @@ export default function Cultivar() {
       if (data && data.length > 0) {
         setPlants(data);
         const urlParams = new URLSearchParams(window.location.search);
-const searchParam = urlParams.get('search');
-if (searchParam) setSearch(searchParam);
+        const searchParam = urlParams.get('search');
+        if (searchParam) setSearch(searchParam);
         const slug = getSlugFromUrl();
         if (slug) {
           const found = data.find(p => p.slug === slug);
