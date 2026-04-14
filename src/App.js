@@ -146,9 +146,7 @@ export default function Cultivar() {
         order: "common_name.asc",
       });
       if (data && data.length > 0) {
-        setPlants(data);const urlParams = new URLSearchParams(window.location.search);
-const searchParam = urlParams.get('search');
-if (searchParam) setSearch(searchParam);
+        setPlants(data);
         const slug = getSlugFromUrl();
         if (slug) {
           const found = data.find(p => p.slug === slug);
