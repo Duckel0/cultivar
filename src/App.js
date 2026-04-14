@@ -116,7 +116,7 @@ export default function Cultivar() {
       });
       for (const plant of plantsWithoutImages || []) {
         try {
-          const searchTerm = plant.common_name || plant.scientific_name;
+          const searchTerm = plant.scientific_name || plant.common_name; const query = plant.scientific_name    ? encodeURIComponent(plant.scientific_name)   : encodeURIComponent(plant.common_name + " plant"); const res = await fetch(`https://api.unsplash.com/search/photos?query=${query}&per_page=3&orientation=landscape&client_id=${UNSPLASH_KEY}`); const data = await res.json(); const img = data?.results?.[0]?.urls?.regular;= plant.common_name || plant.scientific_name;
           const res = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchTerm + " plant")}&per_page=1&client_id=${UNSPLASH_KEY}`);
           const data = await res.json();
           const img = data?.results?.[0]?.urls?.regular;
