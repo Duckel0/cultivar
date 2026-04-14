@@ -183,6 +183,14 @@ export default function Cultivar() {
   const types = useMemo(() => ["All", ...Array.from(new Set(plants.map(p => p.category).filter(Boolean))).sort()], [plants]);
   const diffs = ["All", "Very Easy", "Easy", "Moderate", "Hard", "Expert"];
 
+  const resetFilters = () => {
+    setSearch("");
+    setFilterType("All");
+    setFilterDiff("All");
+    setFilterTox("All");
+    setFilterTrait("All");
+  };
+
   const filtered = useMemo(() => {
     let list = plants.filter(p => {
       const q = search.toLowerCase();
@@ -190,7 +198,7 @@ export default function Cultivar() {
       const mt = filterType === "All" || p.category === filterType;
       const md = filterDiff === "All" || p.difficulty === filterDiff;
       const mx = filterTox === "All" || p.toxicity === filterTox;
-      const mtr = filterTrait === "All" || 
+      const mtr = filterTrait === "All" ||
         (filterTrait === "low_light" && p.low_light) ||
         (filterTrait === "air_purifying" && p.air_purifying) ||
         (filterTrait === "edible" && p.edible);
@@ -205,7 +213,22 @@ export default function Cultivar() {
       if (sortBy === "pet_safe") return (b.toxicity === "Pet Safe" ? 1 : 0) - (a.toxicity === "Pet Safe" ? 1 : 0);
       return 0;
     });
-  }, [plants, search, filterType, filterDiff, filterTox, sortBy]);
+  }, [plants, search, filterType, filterDiff, filterTox, filterTrait, sortBy]);
+
+  const collections = useMemo(() => [
+    { emoji: "🐾", label: "Pet Safe", count: plants.filter(p => p.toxicity === "Pet Safe").length, action: () => { resetFilters(); setFilterTox("Pet Safe"); } },
+    { emoji: "💡", label: "Beginner Friendly", count: plants.filter(p => p.difficulty === "Very Easy").length, action: () => { resetFilters(); setFilterDiff("Very Easy"); } },
+    { emoji: "✦", label: "Rare Collectors", count: plants.filter(p => p.category === "Rare & Collector").length, action: () => { resetFilters(); setFilterType("Rare & Collector"); } },
+    { emoji: "🌑", label: "Low Light", count: plants.filter(p => p.low_light).length, action: () => { resetFilters(); setFilterTrait("low_light"); } },
+    { emoji: "🌿", label: "Air Purifying", count: plants.filter(p => p.air_purifying).length, action: () => { resetFilters(); setFilterTrait("air_purifying"); } },
+    { emoji: "🍽️", label: "Edible Plants", count: plants.filter(p => p.edible).length, action: () => { resetFilters(); setFilterTrait("edible"); } },
+    { emoji: "🌵", label: "Succulents", count: plants.filter(p => p.category === "Succulent").length, action: () => { resetFilters(); setFilterType("Succulent"); } },
+    { emoji: "🪴", label: "Houseplants", count: plants.filter(p => p.category === "Houseplant").length, action: () => { resetFilters(); setFilterType("Houseplant"); } },
+    { emoji: "🌺", label: "Orchids", count: plants.filter(p => p.category === "Orchid").length, action: () => { resetFilters(); setFilterType("Orchid"); } },
+    { emoji: "🪲", label: "Carnivorous", count: plants.filter(p => p.category === "Carnivorous").length, action: () => { resetFilters(); setFilterType("Carnivorous"); } },
+    { emoji: "💧", label: "Aquatic", count: plants.filter(p => p.category === "Aquatic").length, action: () => { resetFilters(); setFilterType("Aquatic"); } },
+    { emoji: "🎋", label: "Bonsai", count: plants.filter(p => p.category === "Bonsai").length, action: () => { resetFilters(); setFilterType("Bonsai"); } },
+  ], [plants]);
 
   const toggleCompare = p => {
     if (compareList.find(c => c.id === p.id)) setCompareList(compareList.filter(c => c.id !== p.id));
@@ -311,36 +334,23 @@ export default function Cultivar() {
                 <div style={{ fontSize: 14 }}>Loading your plant database…</div>
               </div>
             )}
-{!loading && plants.length > 0 && (
-  <div style={{ marginBottom: 20 }}>
-    <p style={{ fontSize: 11, color: "var(--ink3)", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 500, marginBottom: 10 }}>Browse Collections</p>
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 8 }}>
-      {[
-        { emoji: "🐾", label: "Pet Safe", filter: () => { setFilterTox("Pet Safe"); setSearch(""); setFilterType("All"); setFilterDiff("All"); }, count: plants.filter(p => p.toxicity === "Pet Safe").length },
-        { emoji: "💡", label: "Beginner Friendly", filter: () => { setFilterDiff("Very Easy"); setSearch(""); setFilterType("All"); setFilterTox("All"); }, count: plants.filter(p => p.difficulty === "Very Easy").length },
-        { emoji: "✦", label: "Rare Collectors", filter: () => { setFilterType("Rare & Collector"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Rare & Collector").length },
-        { emoji: "🌑", label: "Low Light", filter: () => { setFilterTrait("low_light"); setSearch(""); setFilterType("All"); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.low_light).length },
-        { emoji: "🌿", label: "Air Purifying", filter: () => { setSearch(""); setFilterType("All"); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.air_purifying).length },
-        { emoji: "🍽️", label: "Edible Plants", filter: () => { setSearch(""); setFilterType("All"); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.edible).length },
-        { emoji: "🌵", label: "Succulents", filter: () => { setFilterType("Succulent"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Succulent").length },
-        { emoji: "🪴", label: "Houseplants", filter: () => { setFilterType("Houseplant"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Houseplant").length },
-        { emoji: "🌺", label: "Orchids", filter: () => { setFilterType("Orchid"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Orchid").length },
-        { emoji: "🪲", label: "Carnivorous", filter: () => { setFilterType("Carnivorous"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Carnivorous").length },
-        { emoji: "💧", label: "Aquatic", filter: () => { setFilterType("Aquatic"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Aquatic").length },
-        { emoji: "🎋", label: "Bonsai", filter: () => { setFilterType("Bonsai"); setSearch(""); setFilterDiff("All"); setFilterTox("All"); }, count: plants.filter(p => p.category === "Bonsai").length },
-      ].map(c => (
-        <button key={c.label} className="btn lift" onClick={c.filter}
-          style={{ background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "10px 12px", textAlign: "left", boxShadow: "var(--shadow)" }}>
-          <div style={{ fontSize: 20, marginBottom: 4 }}>{c.emoji}</div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink)", marginBottom: 2 }}>{c.label}</div>
-          <div style={{ fontSize: 11, color: "var(--ink3)" }}>{c.count} plants</div>
-        </button>
-      ))}
-    </div>
-  </div>
-)}
+
             {!loading && plants.length > 0 && (
               <>
+                <div style={{ marginBottom: 20 }}>
+                  <p style={{ fontSize: 11, color: "var(--ink3)", textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 500, marginBottom: 10 }}>Browse Collections</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 8 }}>
+                    {collections.map(c => (
+                      <button key={c.label} className="btn lift" onClick={c.action}
+                        style={{ background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "10px 12px", textAlign: "left", boxShadow: "var(--shadow)" }}>
+                        <div style={{ fontSize: 20, marginBottom: 4 }}>{c.emoji}</div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink)", marginBottom: 2 }}>{c.label}</div>
+                        <div style={{ fontSize: 11, color: "var(--ink3)" }}>{c.count} plants</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: 14, marginBottom: 16, boxShadow: "var(--shadow)" }}>
                   <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
                     <div style={{ flex: 1, position: "relative" }}>
@@ -355,9 +365,9 @@ export default function Cultivar() {
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {[
-                      { label: "Category", val: filterType, set: setFilterType, opts: types },
-                      { label: "Difficulty", val: filterDiff, set: setFilterDiff, opts: diffs },
-                      { label: "Safety", val: filterTox, set: setFilterTox, opts: ["All", "Pet Safe", "Toxic to Pets", "Toxic to Both"] },
+                      { label: "Category", val: filterType, set: (v) => { setFilterType(v); setFilterTrait("All"); }, opts: types },
+                      { label: "Difficulty", val: filterDiff, set: (v) => { setFilterDiff(v); setFilterTrait("All"); }, opts: diffs },
+                      { label: "Safety", val: filterTox, set: (v) => { setFilterTox(v); setFilterTrait("All"); }, opts: ["All", "Pet Safe", "Toxic to Pets", "Toxic to Both"] },
                       { label: "Sort", val: sortBy, set: setSortBy, opts: [["name","Name A–Z"],["difficulty","Easiest first"],["difficulty_desc","Hardest first"],["rare","Rare first"],["pet_safe","Pet safe first"],["category","By category"]], isTuple: true },
                     ].map(f => (
                       <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 6, flex: "1 1 130px" }}>
@@ -369,9 +379,15 @@ export default function Cultivar() {
                       </div>
                     ))}
                   </div>
-                  <div style={{ marginTop: 10, fontSize: 12, color: "var(--ink3)" }}>
-                    {filtered.length} result{filtered.length !== 1 ? "s" : ""}
-                    {compareList.length > 0 && <span style={{ color: "var(--accent)", fontWeight: 500, marginLeft: 10 }}>· {compareList.length}/3 in compare</span>}
+                  <div style={{ marginTop: 10, fontSize: 12, color: "var(--ink3)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>{filtered.length} result{filtered.length !== 1 ? "s" : ""}
+                      {compareList.length > 0 && <span style={{ color: "var(--accent)", fontWeight: 500, marginLeft: 10 }}>· {compareList.length}/3 in compare</span>}
+                    </span>
+                    {(filterType !== "All" || filterDiff !== "All" || filterTox !== "All" || filterTrait !== "All" || search) && (
+                      <button className="btn" onClick={resetFilters} style={{ fontSize: 11, color: "var(--accent)", fontWeight: 500 }}>
+                        Clear filters ×
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -390,6 +406,7 @@ export default function Cultivar() {
                     <div style={{ fontSize: 48, marginBottom: 12 }}>🌾</div>
                     <div className="wm" style={{ fontSize: 20, color: "var(--ink2)", marginBottom: 6 }}>Nothing found</div>
                     <div style={{ fontSize: 13 }}>Try adjusting your filters</div>
+                    <button className="btn" onClick={resetFilters} style={{ marginTop: 12, fontSize: 13, color: "var(--accent)", fontWeight: 500 }}>Clear all filters</button>
                   </div>
                 )}
               </>
