@@ -298,7 +298,7 @@ export default function Cultivar() {
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: plants.length > 0 ? "rgba(82,183,136,0.9)" : "rgba(255,255,255,0.35)" }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: plants.length > 0 ? "#52b788" : "#666", display: "inline-block", boxShadow: plants.length > 0 ? "0 0 6px #52b788" : "none" }} />
-              {plants.length > 0 ? `${plants.length} plants` : "connecting…"}
+              {plants.length > 0 ? `${plants.length.toLocaleString()} plants` : "connecting…"}
             </div>
             <nav style={{ display: "flex", gap: 2 }}>
               {[
