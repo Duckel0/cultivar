@@ -141,7 +141,7 @@ export default function Cultivar() {
     try {
       setLoading(true);
       const data = await query("plants", {
-        select: "id,common_name,scientific_name,emoji,category,description,sunlight,watering,difficulty,toxicity,slug,tags,rare,air_purifying,low_light,drought_tolerant,flowering,fragrant,outdoor_ok,fast_growing,edible,image_url,care_notes,soil,fertilizer,propagation,temperature,common_problems",
+        select: "id,common_name,scientific_name,emoji,category,description,sunlight,watering,difficulty,toxicity,slug,tags,rare,air_purifying,low_light,drought_tolerant,flowering,fragrant,outdoor_ok,fast_growing,edible,image_url,care_notes,soil,fertilizer,propagation,temperature,common_problems,native_region,bloom_season,mature_height,companion_plants,fun_fact",
         filter: "published=eq.true",
         order: "common_name.asc",
       });
