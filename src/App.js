@@ -757,6 +757,46 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
               <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.7, fontWeight: 300 }}>{plant.common_problems}</p>
             </div>
           )}
+          {(plant.native_region || plant.bloom_season || plant.mature_height || plant.fun_fact) && (
+  <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: 16, boxShadow: "var(--shadow)" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+      <span style={{ fontSize: 20 }}>🌍</span>
+      <span style={{ fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>Plant Profile</span>
+    </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {plant.native_region && (
+        <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
+          <span style={{ color: "var(--ink3)", fontWeight: 500, minWidth: 100 }}>Native to</span>
+          <span style={{ color: "var(--ink2)", fontWeight: 300 }}>{plant.native_region}</span>
+        </div>
+      )}
+      {plant.bloom_season && (
+        <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
+          <span style={{ color: "var(--ink3)", fontWeight: 500, minWidth: 100 }}>Blooms</span>
+          <span style={{ color: "var(--ink2)", fontWeight: 300 }}>{plant.bloom_season}</span>
+        </div>
+      )}
+      {plant.mature_height && (
+        <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
+          <span style={{ color: "var(--ink3)", fontWeight: 500, minWidth: 100 }}>Height</span>
+          <span style={{ color: "var(--ink2)", fontWeight: 300 }}>{plant.mature_height}</span>
+        </div>
+      )}
+      {plant.companion_plants && (
+        <div style={{ display: "flex", gap: 10, fontSize: 13 }}>
+          <span style={{ color: "var(--ink3)", fontWeight: 500, minWidth: 100 }}>Pairs With</span>
+          <span style={{ color: "var(--ink2)", fontWeight: 300 }}>{plant.companion_plants}</span>
+        </div>
+      )}
+    </div>
+    {plant.fun_fact && (
+      <div style={{ marginTop: 12, padding: "10px 12px", background: "var(--accent-bg)", borderRadius: "var(--radius-sm)", border: "1px solid var(--accent2)" }}>
+        <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>🌱 Did You Know</div>
+        <p style={{ fontSize: 12, color: "var(--ink2)", lineHeight: 1.6, fontWeight: 300 }}>{plant.fun_fact}</p>
+      </div>
+    )}
+  </div>
+)}
           {!plant.care_notes && !plant.soil && !plant.fertilizer && !plant.propagation && !plant.temperature && !plant.common_problems && (
             <div style={{ textAlign: "center", padding: 32, color: "var(--ink3)", fontSize: 13 }}>
               Detailed care guide coming soon for this plant.
