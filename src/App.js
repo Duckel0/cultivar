@@ -959,3 +959,228 @@ function WishlistView({ plants, onOpen, onRemove }) {
     </div>
   );
 }
+
+function QuizView({ plants, onOpen, onWish, wished }) {
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [results, setResults] = useState(null);
+
+  const questions = [
+    {
+      id: "light",
+      emoji: "☀️",
+      question: "What's the light like in your space?",
+      options: [
+        { label: "Bright & sunny", value: "bright" },
+        { label: "Medium indirect light", value: "medium" },
+        { label: "Pretty dim", value: "low" },
+        { label: "Almost no natural light", value: "verylow" },
+      ],
+    },
+    {
+      id: "water",
+      emoji: "💧",
+      question: "How often do you actually remember to water?",
+      options: [
+        { label: "Every few days, I'm on it", value: "frequent" },
+        { label: "Once a week maybe", value: "weekly" },
+        { label: "When I remember... oops", value: "infrequent" },
+        { label: "Honestly almost never", value: "rare" },
+      ],
+    },
+    {
+      id: "pets",
+      emoji: "🐾",
+      question: "Do you have pets or small kids?",
+      options: [
+        { label: "Yes, dogs or cats", value: "pets" },
+        { label: "Yes, small children", value: "kids" },
+        { label: "Both!", value: "both" },
+        { label: "Nope, all good", value: "none" },
+      ],
+    },
+    {
+      id: "experience",
+      emoji: "🌿",
+      question: "How's your plant parent track record?",
+      options: [
+        { label: "Black thumb, everything dies", value: "beginner" },
+        { label: "Kept a few alive", value: "some" },
+        { label: "Pretty confident", value: "experienced" },
+        { label: "I talk to my plants daily", value: "expert" },
+      ],
+    },
+    {
+      id: "vibe",
+      emoji: "🏡",
+      question: "What's your plant vibe?",
+      options: [
+        { label: "Big dramatic statement plant", value: "statement" },
+        { label: "Cute little shelf plant", value: "small" },
+        { label: "Rare and impressive", value: "rare" },
+        { label: "Something that flowers", value: "flowering" },
+      ],
+    },
+  ];
+
+  const scorePlant = (plant, answers) => {
+    let score = 0;
+
+    // Light matching
+    const lightMap = {
+      bright: ["Full Sun", "Bright Indirect"],
+      medium: ["Bright Indirect", "Medium Light"],
+      low: ["Low Light", "Medium Light"],
+      verylow: ["Low Light"],
+    };
+    if (lightMap[answers.light]?.some(l => plant.sunlight?.includes(l))) score += 3;
+
+    // Water matching
+    const waterMap = {
+      frequent: ["Frequent", "Moderate"],
+      weekly: ["Moderate", "Weekly"],
+      infrequent: ["Low", "Weekly"],
+      rare: ["Low", "Very Low", "Drought Tolerant"],
+    };
+    if (waterMap[answers.water]?.some(w => plant.watering?.includes(w))) score += 3;
+    if (answers.water === "rare" && plant.drought_tolerant) score += 2;
+
+    // Pet safety
+    if (["pets", "kids", "both"].includes(answers.pets) && plant.toxicity === "Pet Safe") score += 4;
+    if (answers.pets === "none") score += 1;
+
+    // Experience
+    const diffMap = {
+      beginner: ["Very Easy", "Easy"],
+      some: ["Easy", "Moderate"],
+      experienced: ["Moderate", "Hard"],
+      expert: ["Hard", "Expert"],
+    };
+    if (diffMap[answers.experience]?.includes(plant.difficulty)) score += 3;
+
+    // Vibe
+    if (answers.vibe === "rare" && plant.rare) score += 4;
+    if (answers.vibe === "flowering" && plant.flowering) score += 4;
+    if (answers.vibe === "statement" && plant.mature_height?.includes("ft")) score += 2;
+    if (answers.vibe === "small" && plant.category === "Succulent") score += 2;
+    if (answers.vibe === "small" && plant.category === "Houseplant") score += 1;
+
+    // Low light bonus
+    if (answers.light === "low" || answers.light === "verylow") {
+      if (plant.low_light) score += 3;
+    }
+
+    return score;
+  };
+
+  const handleAnswer = (questionId, value) => {
+    const newAnswers = { ...answers, [questionId]: value };
+    setAnswers(newAnswers);
+    if (step < questions.length - 1) {
+      setStep(step + 1);
+    } else {
+      // Score all plants
+      const scored = plants
+        .map(p => ({ ...p, score: scorePlant(p, newAnswers) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3);
+      setResults(scored);
+    }
+  };
+
+  const reset = () => {
+    setStep(0);
+    setAnswers({});
+    setResults(null);
+  };
+
+  if (results) {
+    return (
+      <div className="fade">
+        <div style={{ textAlign: "center", marginBottom: 28 }}>
+          <div style={{ fontSize: 48, marginBottom: 10 }}>🌿</div>
+          <h2 className="wm" style={{ fontSize: 28, fontWeight: 400, letterSpacing: "-0.03em", marginBottom: 6 }}>
+            Your Perfect Plants
+          </h2>
+          <p style={{ fontSize: 14, color: "var(--ink3)", fontWeight: 300 }}>
+            Based on your answers, these are your ideal matches
+          </p>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
+          {results.map((plant, i) => (
+            <div key={plant.id} className="lift" onClick={() => onOpen(plant)}
+              style={{ background: "var(--surface)", border: `1.5px solid ${i === 0 ? "var(--accent)" : "var(--border)"}`, borderRadius: "var(--radius)", overflow: "hidden", boxShadow: i === 0 ? "0 0 0 3px var(--accent-bg)" : "var(--shadow)", cursor: "pointer", display: "flex", gap: 0 }}>
+              {i === 0 && <div style={{ width: 4, background: "var(--accent)", flexShrink: 0 }} />}
+              {plant.image_url ? (
+                <img src={plant.image_url} alt={plant.common_name} style={{ width: 90, height: 90, objectFit: "cover", flexShrink: 0 }} />
+              ) : (
+                <div style={{ width: 90, height: 90, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36, background: "var(--surface2)", flexShrink: 0 }}>{plant.emoji}</div>
+              )}
+              <div style={{ padding: "12px 14px", flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  {i === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", background: "var(--accent-bg)", padding: "2px 8px", borderRadius: 99, textTransform: "uppercase", letterSpacing: "0.08em" }}>Best Match</span>}
+                  {i === 1 && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--ink3)", background: "var(--surface2)", padding: "2px 8px", borderRadius: 99, textTransform: "uppercase", letterSpacing: "0.08em" }}>Runner Up</span>}
+                  {i === 2 && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--ink3)", background: "var(--surface2)", padding: "2px 8px", borderRadius: 99, textTransform: "uppercase", letterSpacing: "0.08em" }}>Also Great</span>}
+                </div>
+                <div className="wm" style={{ fontSize: 17, fontWeight: 400, letterSpacing: "-0.02em", marginBottom: 2 }}>{plant.common_name}</div>
+                <div style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink3)", marginBottom: 6 }}>{plant.scientific_name}</div>
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--ink3)" }}>{plant.difficulty}</span>
+                  {plant.toxicity === "Pet Safe" && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "var(--accent-bg)", border: "1px solid var(--accent2)", color: "var(--accent)" }}>🐾 Pet Safe</span>}
+                  {plant.rare && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "#faeaea", border: "1px solid #f0cccc", color: "#8a2a2a" }}>✦ Rare</span>}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+          <button className="btn" onClick={reset}
+            style={{ padding: "10px 24px", background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 99, fontSize: 13, fontWeight: 500, color: "var(--ink2)" }}>
+            Retake Quiz
+          </button>
+          <button className="btn" onClick={() => {
+            const text = `I just found my perfect plant match on Cultivar! 🌿 ${results[0]?.common_name} — check it out`;
+            navigator.clipboard.writeText(text);
+            alert("Copied to clipboard — paste it anywhere to share!");
+          }}
+            style={{ padding: "10px 24px", background: "var(--accent)", border: "none", borderRadius: 99, fontSize: 13, fontWeight: 500, color: "#fff" }}>
+            Share My Results 🌿
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const q = questions[step];
+
+  return (
+    <div className="fade">
+      <div style={{ maxWidth: 520, margin: "0 auto" }}>
+        <div style={{ marginBottom: 28, textAlign: "center" }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 20 }}>
+            {questions.map((_, i) => (
+              <div key={i} style={{ height: 4, width: i === step ? 28 : 16, borderRadius: 99, background: i <= step ? "var(--accent)" : "var(--border)", transition: "all 0.3s ease" }} />
+            ))}
+          </div>
+          <div style={{ fontSize: 44, marginBottom: 12 }}>{q.emoji}</div>
+          <h2 className="wm" style={{ fontSize: 24, fontWeight: 400, letterSpacing: "-0.03em", color: "var(--ink)", marginBottom: 6 }}>{q.question}</h2>
+          <p style={{ fontSize: 12, color: "var(--ink3)" }}>Question {step + 1} of {questions.length}</p>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {q.options.map(opt => (
+            <button key={opt.value} className="btn lift" onClick={() => handleAnswer(q.id, opt.value)}
+              style={{ padding: "16px 20px", background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: "var(--radius)", fontSize: 15, fontWeight: 400, color: "var(--ink)", textAlign: "left", boxShadow: "var(--shadow)" }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {step > 0 && (
+          <button className="btn" onClick={() => setStep(step - 1)}
+            style={{ marginTop: 16, fontSize: 13, color: "var(--ink3)", display: "flex", alignItems: "center", gap: 4 }}>
+            <Icon n="back" s={13} /> Back
+          </button>
+        )}
+      </div>
+    </div>
+  );
+         }
