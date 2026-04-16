@@ -303,6 +303,7 @@ export default function Cultivar() {
             <nav style={{ display: "flex", gap: 2 }}>
               {[
                 { id: "catalog", label: "Catalog" },
+                { id: "quiz", label: "Find My Plant" },
                 { id: "compare", label: compareList.length ? `Compare · ${compareList.length}` : "Compare" },
                 { id: "wishlist", label: wishlist.length ? `Saved · ${wishlist.length}` : "Saved" },
               ].map(t => (
