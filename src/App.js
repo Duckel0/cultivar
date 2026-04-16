@@ -108,34 +108,43 @@ export default function Cultivar() {
   const [activeTab, setActiveTab] = useState("varieties");
 
   const fetchAndSaveImages = async () => {
-    try {
-      const plantsWithoutImages = await query("plants", {
-        select: "id,common_name,scientific_name,image_url",
-        filter: "image_url=is.null",
-        limit: 30,
-      });
-      for (const plant of plantsWithoutImages || []) {
-        try {
-          const searchTerm = plant.common_name || plant.scientific_name;
-          const res = await fetch(`https://api.unsplash.com/search/photos?query=${encodeURIComponent(searchTerm + " plant")}&per_page=1&client_id=${UNSPLASH_KEY}`);
+  try {
+    const plantsWithoutImages = await query("plants", {
+      select: "id,common_name,scientific_name,image_url",
+      filter: "image_url=is.null",
+      limit: 50,
+    });
+    for (const plant of plantsWithoutImages || []) {
+      try {
+        // Try scientific name first, fall back to common name
+        const searches = [plant.scientific_name, plant.common_name].filter(Boolean);
+        let img = null;
+        for (const term of searches) {
+          const res = await fetch(
+            `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(term)}`
+          );
           const data = await res.json();
-          const img = data?.results?.[0]?.urls?.regular;
-          if (img) {
-            await fetch(`${SUPABASE_URL}/rest/v1/plants?id=eq.${plant.id}`, {
-              method: "PATCH",
-              headers: {
-                apikey: SUPABASE_KEY,
-                Authorization: `Bearer ${SUPABASE_KEY}`,
-                "Content-Type": "application/json",
-                "Prefer": "return=minimal",
-              },
-              body: JSON.stringify({ image_url: img }),
-            });
+          if (data?.thumbnail?.source) {
+            img = data.thumbnail.source;
+            break;
           }
-        } catch (e) { console.error(e); }
-      }
-    } catch (e) { console.error(e); }
-  };
+        }
+        if (img) {
+          await fetch(`${SUPABASE_URL}/rest/v1/plants?id=eq.${plant.id}`, {
+            method: "PATCH",
+            headers: {
+              apikey: SUPABASE_KEY,
+              Authorization: `Bearer ${SUPABASE_KEY}`,
+              "Content-Type": "application/json",
+              "Prefer": "return=minimal",
+            },
+            body: JSON.stringify({ image_url: img }),
+          });
+        }
+      } catch (e) { console.error(e); }
+    }
+  } catch (e) { console.error(e); }
+};
 
   const loadPlants = useCallback(async () => {
     try {
