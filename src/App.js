@@ -426,6 +426,10 @@ export default function Cultivar() {
         {view === "wishlist" && (
           <WishlistView plants={wishlist} onOpen={openPlant} onRemove={id => setWishlist(wishlist.filter(p => p.id !== id))} />
         )}
+
+        {view === "quiz" && (
+          <QuizView plants={plants} onOpen={openPlant} onWish={toggleWish} wished={isWished} />
+        )}
       </main>
     </div>
   );
