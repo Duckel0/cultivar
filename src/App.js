@@ -533,7 +533,14 @@ function PlantDetail({ plant, onBack, onWish, onCompare, wished, compared, activ
               select: "price_usd,in_stock,retailer_id,retailers(name)",
               filter: `variety_id=eq.${v.id}`,
             });
-            return { ...v, prices: prices || [] };
+            const seen = new Set();
+const uniquePrices = (prices || []).filter(p => {
+  const key = p.retailers?.name;
+  if (!key || seen.has(key)) return false;
+  seen.add(key);
+  return true;
+});
+return { ...v, prices: uniquePrices };
           } catch { return { ...v, prices: [] }; }
         }));
         setVarieties(withPrices);
