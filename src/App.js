@@ -7,8 +7,6 @@ import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
 const SUPABASE_URL = "https://ewyfhousutslimzwoflk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWZob3VzdXRzbGltendvZmxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NzQ1OTksImV4cCI6MjA5MTM1MDU5OX0.SMq04MDpT-FLSHbWA6i_2meJ56cJfITTy4ig37K7R-s";
 
-const PAGE_SIZE = 30;
-
 // ---------- storage (safe everywhere) ----------
 const store = {
   get(k, f) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } },
@@ -226,8 +224,6 @@ export default function Cultivar() {
   const [plants, setPlants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [page, setPage] = useState(0);
 
   const [wishlist, setWishlist] = usePersisted("cultivar:wish", []);
   const [compare, setCompare] = usePersisted("cultivar:compare", []);
@@ -242,40 +238,33 @@ export default function Cultivar() {
   const search = useDebounced(searchRaw, 200);
   const toast = useToast();
 
-  // ---- load first page quickly ----
-  const loadPage = useCallback(async (p = 0) => {
+  const [totalCount, setTotalCount] = useState(null);
+
+  // ---- load ALL plants upfront, one shot ----
+  const load = useCallback(async () => {
     try {
-      if (p === 0) setLoading(true);
+      setLoading(true);
       setError(null);
-      // Smaller projection — only what the card needs
-      const cardFields = "id,common_name,scientific_name,emoji,category,description,sunlight,watering,difficulty,toxicity,slug,tags,rare,low_light,air_purifying,edible,image_url";
-      const from = p * PAGE_SIZE;
-      const to = from + PAGE_SIZE - 1;
+      const cardFields = "id,common_name,scientific_name,emoji,category,description,sunlight,watering,difficulty,toxicity,slug,tags,rare,low_light,air_purifying,drought_tolerant,flowering,fragrant,outdoor_ok,fast_growing,edible,image_url";
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/plants?select=${cardFields}&published=eq.true&order=common_name.asc`,
         {
           headers: {
             apikey: SUPABASE_KEY,
             Authorization: `Bearer ${SUPABASE_KEY}`,
-            Range: `${from}-${to}`,
-            Prefer: "count=estimated",
           },
         }
       );
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
-      setPlants(prev => p === 0 ? data : [...prev, ...data]);
-      setHasMore(data.length === PAGE_SIZE);
-      setPage(p);
+      setPlants(data);
+      setTotalCount(data.length);
 
-      // Deep link on first load
-      if (p === 0) {
-        const r = getRoute();
-        if (r.view === "detail" && r.slug) {
-          const f = data.find(x => x.slug === r.slug);
-          if (f) { setSelected(f); setView("detail"); }
-          // if not on first page, a full fetch will handle it — see effect below
-        }
+      // Deep link
+      const r = getRoute();
+      if (r.view === "detail" && r.slug) {
+        const f = data.find(x => x.slug === r.slug);
+        if (f) { setSelected(f); setView("detail"); }
       }
     } catch (e) {
       console.error(e);
@@ -285,20 +274,7 @@ export default function Cultivar() {
     }
   }, []);
 
-  useEffect(() => { loadPage(0); }, [loadPage]);
-
-  // Infinite scroll sentinel
-  const sentinelRef = useRef(null);
-  useEffect(() => {
-    if (!hasMore || loading || view !== "catalog") return;
-    const el = sentinelRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(([e]) => {
-      if (e.isIntersecting) loadPage(page + 1);
-    }, { rootMargin: "400px" });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [hasMore, loading, page, view, loadPage]);
+  useEffect(() => { load(); }, [load]);
 
   // Browser back/forward
   useEffect(() => {
@@ -315,17 +291,20 @@ export default function Cultivar() {
     return () => window.removeEventListener("popstate", onPop);
   }, [plants]);
 
-  // Derived
+  // Categories from loaded plants
   const types = useMemo(
     () => ["All", ...Array.from(new Set(plants.map(p => p.category).filter(Boolean))).sort()],
     [plants]
   );
 
+  // Client-side filter over ALL plants
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
     let list = plants.filter(p => {
-      const ms = !q || p.common_name?.toLowerCase().includes(q)
+      const ms = !q
+        || p.common_name?.toLowerCase().includes(q)
         || p.scientific_name?.toLowerCase().includes(q)
+        || p.description?.toLowerCase().includes(q)
         || p.tags?.some(t => t.toLowerCase().includes(q));
       const mt = type === "All" || p.category === type;
       const md = diff === "All" || p.difficulty === diff;
@@ -397,14 +376,15 @@ export default function Cultivar() {
             marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
           }}>
             <span>⚠ {error}</span>
-            <button className="btn" onClick={() => loadPage(0)} style={{ color: "#8a2a1a", fontWeight: 600, fontSize: 13 }}>Retry</button>
+            <button className="btn" onClick={load} style={{ color: "#8a2a1a", fontWeight: 600, fontSize: 13 }}>Retry</button>
           </div>
         )}
 
         {view === "catalog" && (
           <Catalog
-            loading={loading && plants.length === 0}
+            loading={loading}
             plants={plants}
+            totalCount={totalCount}
             filtered={filtered}
             searchRaw={searchRaw}
             setSearchRaw={setSearchRaw}
@@ -422,9 +402,6 @@ export default function Cultivar() {
             onCmp={toggleCmp}
             isWished={isWished}
             isCmp={isCmp}
-            sentinelRef={sentinelRef}
-            hasMore={hasMore}
-            loadingMore={loading && plants.length > 0}
           />
         )}
 
@@ -557,11 +534,10 @@ const Header = memo(({ view, count, wishCount, cmpCount, onNav, onHome }) => {
 
 // ---------- CATALOG ----------
 function Catalog({
-  loading, plants, filtered, searchRaw, setSearchRaw,
+  loading, plants, totalCount, filtered, searchRaw, setSearchRaw,
   type, setType, diff, setDiff, tox, setTox, sort, setSort, types,
   hasActiveFilters, reset, showFilters, setShowFilters,
   onOpen, onWish, onCmp, isWished, isCmp,
-  sentinelRef, hasMore, loadingMore,
 }) {
   const filterCount = (type !== "All" ? 1 : 0) + (diff !== "All" ? 1 : 0) + (tox !== "All" ? 1 : 0);
 
@@ -575,7 +551,11 @@ function Catalog({
           The Plant <em style={{ fontStyle: "italic", color: "var(--accent)" }}>Intelligence</em> Database
         </h1>
         <p style={{ fontSize: 13, color: "var(--ink3)", marginTop: 6 }}>
-          {loading ? "Loading…" : `${plants.length}+ species · scroll for more`}
+          {loading
+            ? "Loading…"
+            : hasActiveFilters
+              ? `${filtered.length} of ${plants.length} plants`
+              : `${plants.length.toLocaleString()} species`}
         </p>
       </div>
 
@@ -675,11 +655,6 @@ function Catalog({
                 wished={isWished(p.id)} comped={isCmp(p.id)} />
             ))}
           </div>
-          {hasMore && !hasActiveFilters && (
-            <div ref={sentinelRef} style={{ padding: "30px 0", textAlign: "center", color: "var(--ink3)", fontSize: 13 }}>
-              {loadingMore ? <><span className="spinner" style={{ display: "inline-block", verticalAlign: "middle", marginRight: 8 }} /> Loading more…</> : "Scroll for more"}
-            </div>
-          )}
         </>
       )}
     </div>
