@@ -1,58 +1,49 @@
-/* Cultivar — mobile-first, fast, zero setup required.
-   Works with your existing tables: plants, varieties, prices, retailers.
-   Optional tables (plant_images, reviews) are detected and used if they exist. */
+/* Cultivar — The Plant Journal. Editorial botanical field guide for tree huggers. */
 
 import { useState, useMemo, useEffect, useCallback, useRef, memo } from "react";
 
 const SUPABASE_URL = "https://ewyfhousutslimzwoflk.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV3eWZob3VzdXRzbGltendvZmxrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NzQ1OTksImV4cCI6MjA5MTM1MDU5OX0.SMq04MDpT-FLSHbWA6i_2meJ56cJfITTy4ig37K7R-s";
 
-// ---------- storage (safe everywhere) ----------
+// ---------- storage ----------
 const store = {
   get(k, f) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 
-// ---------- API ----------
-async function sb(path, { signal } = {}) {
+// ---------- api ----------
+async function sb(path) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    signal,
     headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
   });
   if (!res.ok) throw new Error(`${res.status}`);
   return res.json();
 }
 
-// ---------- Wikipedia image cache (client-side, localStorage) ----------
-const IMG_CACHE_KEY = "cultivar:img-cache:v2";
-const imgCache = store.get(IMG_CACHE_KEY, {});
-let imgCacheDirty = false;
-setInterval(() => { if (imgCacheDirty) { store.set(IMG_CACHE_KEY, imgCache); imgCacheDirty = false; } }, 3000);
+// ---------- wikipedia images (cached to localStorage) ----------
+const IMG_KEY = "cultivar:imgs:v3";
+const imgCache = store.get(IMG_KEY, {});
+let imgDirty = false;
+setInterval(() => { if (imgDirty) { store.set(IMG_KEY, imgCache); imgDirty = false; } }, 2500);
 
-const inFlightImg = new Map();
-async function fetchWikiImage(term) {
+const imgInflight = new Map();
+async function wikiImage(term) {
   if (!term) return null;
   if (imgCache[term] !== undefined) return imgCache[term];
-  if (inFlightImg.has(term)) return inFlightImg.get(term);
+  if (imgInflight.has(term)) return imgInflight.get(term);
   const p = (async () => {
     try {
       const r = await fetch(
-        `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&piprop=original&titles=${encodeURIComponent(term)}&origin=*&redirects=1`,
-        { signal: AbortSignal.timeout?.(5000) }
+        `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&piprop=original&titles=${encodeURIComponent(term)}&origin=*&redirects=1`
       );
       const d = await r.json();
       const url = Object.values(d?.query?.pages ?? {})[0]?.original?.source ?? null;
-      imgCache[term] = url;
-      imgCacheDirty = true;
+      imgCache[term] = url; imgDirty = true;
       return url;
-    } catch {
-      imgCache[term] = null;
-      return null;
-    } finally {
-      inFlightImg.delete(term);
-    }
+    } catch { imgCache[term] = null; return null; }
+    finally { imgInflight.delete(term); }
   })();
-  inFlightImg.set(term, p);
+  imgInflight.set(term, p);
   return p;
 }
 
@@ -84,14 +75,43 @@ const retailerLink = (retailer, plant) => {
   return map[retailer] || `https://www.google.com/search?q=${encodeURIComponent(retailer + " " + plant)}`;
 };
 
-// ---------- design tokens ----------
-const DIFF = {
-  "Very Easy": "#5aaa3c", "Easy": "#7ac44a", "Moderate": "#c49a2a",
-  "Hard": "#c44a3c", "Expert": "#3a3a5a",
-};
+// ---------- smart natural-language search ----------
+const SMART = [
+  { re: /\b(pet safe|dog safe|cat safe|non-?toxic)\b/i, f: p => p.toxicity === "Pet Safe" },
+  { re: /\b(toxic|poisonous|dangerous)\b/i, f: p => p.toxicity && p.toxicity !== "Pet Safe" },
+  { re: /\b(low light|dim|shade|shady|dark|no sun)\b/i, f: p => p.low_light },
+  { re: /\b(bright|sunny|full sun)\b/i, f: p => /bright|full sun/i.test(p.sunlight ?? "") },
+  { re: /\b(easy|beginner|newbie|starter|forgiving)\b/i, f: p => ["Very Easy","Easy"].includes(p.difficulty) },
+  { re: /\b(hard|expert|challenging|difficult|advanced)\b/i, f: p => ["Hard","Expert"].includes(p.difficulty) },
+  { re: /\b(rare|collector|unusual|unique)\b/i, f: p => p.rare },
+  { re: /\b(edible|food|fruit|vegetable|herb)\b/i, f: p => p.edible },
+  { re: /\b(flowering|flowers|blooms|blooming)\b/i, f: p => p.flowering },
+  { re: /\b(fragrant|smell|scented|perfume|aromatic)\b/i, f: p => p.fragrant },
+  { re: /\b(drought|dry|desert|no water)\b/i, f: p => p.drought_tolerant || p.category === "Succulent" },
+  { re: /\b(outdoor|garden|yard|patio)\b/i, f: p => p.outdoor_ok },
+  { re: /\b(fast|quick|grows fast)\b/i, f: p => p.fast_growing },
+  { re: /\b(air purif|clean air|oxygen)\b/i, f: p => p.air_purifying },
+];
+function smartFilter(plants, query) {
+  if (!query.trim()) return plants;
+  let rem = query.toLowerCase().trim();
+  const filters = [];
+  for (const k of SMART) {
+    if (k.re.test(rem)) { filters.push(k.f); rem = rem.replace(k.re, " ").replace(/\s+/g, " ").trim(); }
+  }
+  return plants.filter(p => {
+    for (const f of filters) if (!f(p)) return false;
+    if (!rem) return true;
+    return p.common_name?.toLowerCase().includes(rem)
+      || p.scientific_name?.toLowerCase().includes(rem)
+      || p.description?.toLowerCase().includes(rem)
+      || p.category?.toLowerCase().includes(rem)
+      || p.tags?.some(t => t.toLowerCase().includes(rem));
+  });
+}
 
 // ---------- icons ----------
-const Icon = memo(({ n, s = 16 }) => {
+const Icon = memo(({ n, s = 18 }) => {
   const I = {
     search: <><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></>,
     leaf: <><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></>,
@@ -100,30 +120,33 @@ const Icon = memo(({ n, s = 16 }) => {
     heart: <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>,
     cmp: <><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></>,
     back: <polyline points="15 18 9 12 15 6"/>,
+    arrow: <><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></>,
     x: <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
-    filter: <><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></>,
+    menu: <><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></>,
     spark: <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/>,
-    menu: <><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></>,
     share: <><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></>,
+    check: <polyline points="20 6 9 17 4 12"/>,
+    plus: <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
+    book: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></>,
+    dice: <><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><circle cx="16" cy="16" r="1"/><circle cx="8" cy="16" r="1"/><circle cx="16" cy="8" r="1"/></>,
+    compass: <><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></>,
   };
   const c = I[n]; if (!c) return null;
-  const f = ["heart", "spark"].includes(n);
-  return <svg width={s} height={s} viewBox="0 0 24 24" fill={f ? "currentColor" : "none"} stroke={f ? "none" : "currentColor"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}>{c}</svg>;
+  const fill = ["heart","spark"].includes(n);
+  return <svg width={s} height={s} viewBox="0 0 24 24" fill={fill ? "currentColor" : "none"} stroke={fill ? "none" : "currentColor"} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}>{c}</svg>;
 });
 
 // ---------- hooks ----------
-function useDebounced(v, d = 200) {
+function useDebounced(v, d = 180) {
   const [s, set] = useState(v);
   useEffect(() => { const t = setTimeout(() => set(v), d); return () => clearTimeout(t); }, [v, d]);
   return s;
 }
-
 function usePersisted(k, init) {
   const [v, set] = useState(() => store.get(k, init));
   useEffect(() => { store.set(k, v); }, [k, v]);
   return [v, set];
 }
-
 function useInView() {
   const ref = useRef(null);
   const [seen, setSeen] = useState(false);
@@ -138,50 +161,46 @@ function useInView() {
   return [ref, seen];
 }
 
-// ---------- LazyImage: fetches wiki image only when scrolled near ----------
-const LazyImage = memo(({ plant, height = 170, rounded = 0 }) => {
+// ---------- plant image ----------
+const PlantImage = memo(({ plant, height = 200, rounded = 0, eager = false }) => {
   const [ref, inView] = useInView();
-  const [src, setSrc] = useState(plant.image_url || null);
+  const active = eager || inView;
+  const [src, setSrc] = useState(plant?.image_url || null);
   const [loaded, setLoaded] = useState(false);
-  const [errored, setErrored] = useState(false);
-
+  const [err, setErr] = useState(false);
   useEffect(() => {
-    if (!inView || src || errored) return;
+    if (!active || src || err) return;
     let live = true;
-    fetchWikiImage(plant.scientific_name).then(url => {
+    wikiImage(plant?.scientific_name).then(url => {
       if (!live) return;
       if (url) setSrc(url);
-      else fetchWikiImage(plant.common_name).then(u2 => live && u2 && setSrc(u2));
+      else wikiImage(plant?.common_name).then(u => live && u && setSrc(u));
     });
     return () => { live = false; };
-  }, [inView, plant.scientific_name, plant.common_name, src, errored]);
-
+  }, [active, plant?.scientific_name, plant?.common_name, src, err]);
   return (
     <div ref={ref} style={{
       position: "relative", width: "100%", height,
-      background: "linear-gradient(135deg, #e8ede4, #d5e0d0)",
+      background: "linear-gradient(135deg, #dce7d4, #c5d4bc)",
       overflow: "hidden", borderRadius: rounded,
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
-      {(!src || errored) && (
-        <div style={{ fontSize: Math.max(28, height * 0.4), opacity: 0.55 }}>
-          {plant.emoji || "🌿"}
-        </div>
+      {(!src || err) && (
+        <div style={{
+          fontSize: typeof height === 'number' ? Math.max(28, height * 0.35) : 48,
+          opacity: 0.45,
+        }}>{plant?.emoji || "🌿"}</div>
       )}
-      {src && !errored && (
-        <img
-          src={src}
-          alt={plant.common_name}
-          loading="lazy"
-          onLoad={() => setLoaded(true)}
-          onError={() => setErrored(true)}
+      {src && !err && (
+        <img src={src} alt={plant?.common_name} loading="lazy"
+          onLoad={() => setLoaded(true)} onError={() => setErr(true)}
           style={{
-            position: "absolute", inset: 0,
-            width: "100%", height: "100%", objectFit: "cover",
+            position: "absolute", inset: 0, width: "100%", height: "100%",
+            objectFit: "cover",
             opacity: loaded ? 1 : 0,
-            transition: "opacity 0.35s ease",
-          }}
-        />
+            transform: loaded ? "scale(1)" : "scale(1.03)",
+            transition: "opacity 0.4s ease, transform 0.6s ease",
+          }} />
       )}
     </div>
   );
@@ -190,25 +209,28 @@ const LazyImage = memo(({ plant, height = 170, rounded = 0 }) => {
 // ---------- toast ----------
 function useToast() {
   const [m, set] = useState(null);
-  const show = useCallback((text) => {
-    set({ text, id: Date.now() });
-    setTimeout(() => set(c => c?.id === Date.now() ? null : c), 2500);
-    setTimeout(() => set(null), 2600);
+  const timer = useRef(null);
+  const show = useCallback((text, tone = "ok") => {
+    clearTimeout(timer.current);
+    set({ text, tone, id: Date.now() });
+    timer.current = setTimeout(() => set(null), 2400);
   }, []);
   const el = m && (
     <div role="status" style={{
       position: "fixed", bottom: "calc(20px + env(safe-area-inset-bottom))", left: "50%",
       transform: "translateX(-50%)", zIndex: 9999,
-      background: "#1a3a28", color: "#fff",
-      padding: "11px 20px", borderRadius: 999, fontSize: 14,
-      boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-      animation: "slideUp 0.3s ease", maxWidth: "90vw", textAlign: "center",
+      background: m.tone === "err" ? "#7a2818" : "#1e3a27",
+      color: "#f4ede0",
+      padding: "12px 22px", borderRadius: 2, fontSize: 14, fontWeight: 500,
+      boxShadow: "0 10px 32px rgba(0,0,0,0.3)",
+      animation: "slideUp 0.25s ease", maxWidth: "90vw",
+      border: "1px solid rgba(244,237,224,0.1)",
     }}>{m.text}</div>
   );
   return { show, el };
 }
 
-// ---------- routing (simple) ----------
+// ---------- routing ----------
 function getRoute() {
   const p = window.location.pathname;
   if (p.startsWith("/plant/")) return { view: "detail", slug: p.slice(7) };
@@ -216,7 +238,7 @@ function getRoute() {
 }
 
 // =====================================================================
-// MAIN
+// APP
 // =====================================================================
 export default function Cultivar() {
   const [view, setView] = useState("catalog");
@@ -227,40 +249,32 @@ export default function Cultivar() {
 
   const [wishlist, setWishlist] = usePersisted("cultivar:wish", []);
   const [compare, setCompare] = usePersisted("cultivar:compare", []);
+  const [myCollection, setMyCollection] = usePersisted("cultivar:collection", []);
+  const [journal, setJournal] = usePersisted("cultivar:journal", {});
+  const [plantOfDay, setPlantOfDay] = usePersisted("cultivar:pod", null);
 
   const [searchRaw, setSearchRaw] = useState("");
-  const [type, setType] = useState("All");
-  const [diff, setDiff] = useState("All");
-  const [tox, setTox] = useState("All");
-  const [sort, setSort] = useState("name");
-  const [showFilters, setShowFilters] = useState(false);
-
-  const search = useDebounced(searchRaw, 200);
+  const search = useDebounced(searchRaw, 180);
   const toast = useToast();
 
-  const [totalCount, setTotalCount] = useState(null);
-
-  // ---- load ALL plants upfront, one shot ----
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const cardFields = "id,common_name,scientific_name,emoji,category,description,sunlight,watering,difficulty,toxicity,slug,tags,rare,low_light,air_purifying,drought_tolerant,flowering,fragrant,outdoor_ok,fast_growing,edible,image_url";
+      const fields = "id,common_name,scientific_name,emoji,category,description,sunlight,watering,difficulty,toxicity,slug,tags,rare,low_light,air_purifying,drought_tolerant,flowering,fragrant,outdoor_ok,fast_growing,edible,image_url";
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/plants?select=${cardFields}&published=eq.true&order=common_name.asc`,
-        {
-          headers: {
-            apikey: SUPABASE_KEY,
-            Authorization: `Bearer ${SUPABASE_KEY}`,
-          },
-        }
+        `${SUPABASE_URL}/rest/v1/plants?select=${fields}&published=eq.true&order=common_name.asc`,
+        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
       );
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
       setPlants(data);
-      setTotalCount(data.length);
-
-      // Deep link
+      if (data.length) {
+        const day = Math.floor(Date.now() / 86400000);
+        if (!plantOfDay || plantOfDay.day !== day) {
+          setPlantOfDay({ day, plant: data[day % data.length] });
+        }
+      }
       const r = getRoute();
       if (r.view === "detail" && r.slug) {
         const f = data.find(x => x.slug === r.slug);
@@ -268,7 +282,7 @@ export default function Cultivar() {
       }
     } catch (e) {
       console.error(e);
-      setError("Could not load plants. Check connection and retry.");
+      setError("Couldn't reach the greenhouse. Try again?");
     } finally {
       setLoading(false);
     }
@@ -276,55 +290,24 @@ export default function Cultivar() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Browser back/forward
   useEffect(() => {
     const onPop = () => {
       const r = getRoute();
       if (r.view === "detail" && r.slug) {
         const f = plants.find(x => x.slug === r.slug);
         if (f) { setSelected(f); setView("detail"); }
-      } else {
-        setView("catalog"); setSelected(null);
-      }
+      } else { setView("catalog"); setSelected(null); }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [plants]);
 
-  // Categories from loaded plants
-  const types = useMemo(
-    () => ["All", ...Array.from(new Set(plants.map(p => p.category).filter(Boolean))).sort()],
-    [plants]
-  );
+  const filtered = useMemo(() => smartFilter(plants, search), [plants, search]);
 
-  // Client-side filter over ALL plants
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    let list = plants.filter(p => {
-      const ms = !q
-        || p.common_name?.toLowerCase().includes(q)
-        || p.scientific_name?.toLowerCase().includes(q)
-        || p.description?.toLowerCase().includes(q)
-        || p.tags?.some(t => t.toLowerCase().includes(q));
-      const mt = type === "All" || p.category === type;
-      const md = diff === "All" || p.difficulty === diff;
-      const mx = tox === "All" || p.toxicity === tox;
-      return ms && mt && md && mx;
-    });
-    if (sort === "name") list.sort((a, b) => (a.common_name ?? "").localeCompare(b.common_name ?? ""));
-    else if (sort === "rare") list.sort((a, b) => (b.rare ? 1 : 0) - (a.rare ? 1 : 0));
-    else if (sort === "pet_safe") list.sort((a, b) => (b.toxicity === "Pet Safe" ? 1 : 0) - (a.toxicity === "Pet Safe" ? 1 : 0));
-    return list;
-  }, [plants, search, type, diff, tox, sort]);
-
-  const hasActiveFilters = search || type !== "All" || diff !== "All" || tox !== "All";
-  const reset = () => { setSearchRaw(""); setType("All"); setDiff("All"); setTox("All"); };
-
-  // Actions
   const toggleWish = useCallback((p) => {
     setWishlist(w => {
-      if (w.find(x => x.id === p.id)) { toast.show(`Removed from saved`); return w.filter(x => x.id !== p.id); }
-      toast.show(`Saved ${p.common_name} ♥`);
+      if (w.find(x => x.id === p.id)) { toast.show("Removed from wishlist"); return w.filter(x => x.id !== p.id); }
+      toast.show(`${p.common_name} saved to wishlist`);
       return [...w, p];
     });
   }, [toast, setWishlist]);
@@ -332,104 +315,107 @@ export default function Cultivar() {
   const toggleCmp = useCallback((p) => {
     setCompare(c => {
       if (c.find(x => x.id === p.id)) { toast.show("Removed from compare"); return c.filter(x => x.id !== p.id); }
-      if (c.length >= 3) { toast.show("Max 3 in compare"); return c; }
-      toast.show(`Added (${c.length + 1}/3)`);
+      if (c.length >= 3) { toast.show("Compare holds up to 3 plants", "err"); return c; }
+      toast.show(`Added · ${c.length + 1}/3 in compare`);
       return [...c, p];
     });
   }, [toast, setCompare]);
 
+  const addCollection = useCallback((p) => {
+    setMyCollection(c => {
+      if (c.find(x => x.id === p.id)) return c;
+      toast.show(`${p.common_name} added to your collection 🌱`);
+      return [...c, { id: p.id, slug: p.slug, common_name: p.common_name, scientific_name: p.scientific_name, emoji: p.emoji, image_url: p.image_url, added: Date.now() }];
+    });
+  }, [toast, setMyCollection]);
+
+  const removeCollection = useCallback((id) => {
+    setMyCollection(c => c.filter(x => x.id !== id));
+  }, [setMyCollection]);
+
+  const addJournal = useCallback((plantId, text) => {
+    setJournal(j => {
+      const next = { ...j };
+      next[plantId] = [...(next[plantId] ?? []), { id: Date.now(), text, date: Date.now() }];
+      return next;
+    });
+    toast.show("Entry logged 📓");
+  }, [toast, setJournal]);
+
   const openPlant = useCallback((p) => {
     setSelected(p); setView("detail");
     window.history.pushState({}, "", `/plant/${p.slug}`);
-    window.scrollTo({ top: 0 });
+    window.scrollTo({ top: 0, behavior: "instant" });
     document.title = `${p.common_name} — Cultivar`;
   }, []);
 
   const goHome = useCallback(() => {
     setView("catalog"); setSelected(null);
     window.history.pushState({}, "", "/");
-    document.title = "Cultivar — Plant Database";
+    document.title = "Cultivar — The Plant Journal";
   }, []);
 
   const isWished = id => wishlist.some(w => w.id === id);
   const isCmp = id => compare.some(c => c.id === id);
+  const inCollection = id => myCollection.some(c => c.id === id);
 
   return (
-    <div style={{ background: "var(--bg)", minHeight: "100vh", color: "var(--ink)", fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+    <div className="app">
       <Styles />
       {toast.el}
 
       <Header
         view={view}
-        count={plants.length}
         wishCount={wishlist.length}
         cmpCount={compare.length}
+        collectionCount={myCollection.length}
         onNav={v => { if (v === "catalog") goHome(); else setView(v); }}
         onHome={goHome}
       />
 
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 14px 80px" }}>
+      <main className="main">
         {error && (
-          <div style={{
-            padding: "12px 14px", background: "#fde8e5", border: "1.5px solid #f5c1ba",
-            borderRadius: 10, color: "#8a2a1a", fontSize: 13,
-            marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
-          }}>
-            <span>⚠ {error}</span>
-            <button className="btn" onClick={load} style={{ color: "#8a2a1a", fontWeight: 600, fontSize: 13 }}>Retry</button>
+          <div className="error-card">
+            <span>🥀 {error}</span>
+            <button className="btn" onClick={load}>Try again</button>
           </div>
         )}
 
         {view === "catalog" && (
           <Catalog
-            loading={loading}
-            plants={plants}
-            totalCount={totalCount}
-            filtered={filtered}
-            searchRaw={searchRaw}
-            setSearchRaw={setSearchRaw}
-            type={type} setType={setType}
-            diff={diff} setDiff={setDiff}
-            tox={tox} setTox={setTox}
-            sort={sort} setSort={setSort}
-            types={types}
-            hasActiveFilters={hasActiveFilters}
-            reset={reset}
-            showFilters={showFilters}
-            setShowFilters={setShowFilters}
-            onOpen={openPlant}
-            onWish={toggleWish}
-            onCmp={toggleCmp}
-            isWished={isWished}
-            isCmp={isCmp}
+            loading={loading} plants={plants} filtered={filtered}
+            searchRaw={searchRaw} setSearchRaw={setSearchRaw}
+            plantOfDay={plantOfDay?.plant}
+            onOpen={openPlant} onWish={toggleWish} onCmp={toggleCmp}
+            isWished={isWished} isCmp={isCmp}
           />
         )}
 
         {view === "detail" && selected && (
           <Detail
-            plant={selected}
-            onBack={goHome}
-            onWish={toggleWish}
-            onCmp={toggleCmp}
-            wished={isWished(selected.id)}
-            comped={isCmp(selected.id)}
+            plant={selected} plants={plants}
+            onBack={goHome} onOpen={openPlant}
+            onWish={toggleWish} onCmp={toggleCmp}
+            onAddCollection={addCollection} onRemoveCollection={removeCollection}
+            onJournal={addJournal} journal={journal[selected.id] ?? []}
+            wished={isWished(selected.id)} comped={isCmp(selected.id)} owned={inCollection(selected.id)}
             toast={toast.show}
           />
         )}
 
         {view === "compare" && (
-          <Compare
-            plants={compare}
-            onRemove={id => setCompare(compare.filter(x => x.id !== id))}
-            onOpen={openPlant}
-          />
+          <Compare plants={compare} onRemove={id => setCompare(compare.filter(x => x.id !== id))} onOpen={openPlant} />
         )}
 
         {view === "wishlist" && (
-          <Wishlist
-            plants={wishlist}
-            onOpen={openPlant}
-            onRemove={id => setWishlist(wishlist.filter(x => x.id !== id))}
+          <Wishlist plants={wishlist} onOpen={openPlant} onRemove={id => setWishlist(wishlist.filter(x => x.id !== id))} />
+        )}
+
+        {view === "collection" && (
+          <Collection
+            items={myCollection} allPlants={plants} journal={journal}
+            onOpen={(slug) => { const p = plants.find(x => x.slug === slug); if (p) openPlant(p); }}
+            onRemove={removeCollection}
           />
         )}
 
@@ -441,91 +427,52 @@ export default function Cultivar() {
   );
 }
 
-// ---------- HEADER (mobile-first bottom-friendly top bar) ----------
-const Header = memo(({ view, count, wishCount, cmpCount, onNav, onHome }) => {
+// ---------- HEADER ----------
+const Header = memo(({ view, wishCount, cmpCount, collectionCount, onNav, onHome }) => {
   const [menu, setMenu] = useState(false);
   const items = [
-    { id: "catalog", label: "Browse" },
-    { id: "quiz", label: "Find My Plant" },
-    { id: "compare", label: cmpCount ? `Compare · ${cmpCount}` : "Compare" },
-    { id: "wishlist", label: wishCount ? `Saved · ${wishCount}` : "Saved" },
+    { id: "catalog", label: "Browse", icon: "compass" },
+    { id: "quiz", label: "Match me", icon: "dice" },
+    { id: "collection", label: collectionCount ? `Mine · ${collectionCount}` : "My plants", icon: "leaf" },
+    { id: "wishlist", label: wishCount ? `Wishlist · ${wishCount}` : "Wishlist", icon: "heart" },
+    { id: "compare", label: cmpCount ? `Compare · ${cmpCount}` : "Compare", icon: "cmp" },
   ];
-
   return (
-    <header className="hero-bg" style={{
-      position: "sticky", top: 0, zIndex: 100,
-      paddingTop: "env(safe-area-inset-top)",
-      boxShadow: "0 2px 14px rgba(0,0,0,0.15)",
-    }}>
-      <div style={{
-        maxWidth: 1100, margin: "0 auto",
-        padding: "0 14px", height: 56,
-        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
-      }}>
-        <button onClick={onHome} className="btn" style={{
-          display: "flex", alignItems: "center", gap: 10, minWidth: 0,
-          color: "#fff",
-        }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 8,
-            background: "linear-gradient(135deg, #52b788, #2d6a4f)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 2px 8px rgba(82,183,136,0.4)",
-          }}>
-            <Icon n="leaf" s={16} />
+    <header className="header">
+      <div className="header-inner">
+        <button onClick={onHome} className="brand btn">
+          <div className="brand-mark">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/>
+              <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+            </svg>
           </div>
-          <div style={{ textAlign: "left", minWidth: 0 }}>
-            <div className="wm" style={{ fontSize: 19, fontWeight: 500, lineHeight: 1, letterSpacing: "-0.02em" }}>Cultivar</div>
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,0.45)", letterSpacing: "0.12em", textTransform: "uppercase", marginTop: 2 }}>
-              Plant Database
-            </div>
+          <div className="brand-text">
+            <div className="brand-name">Cultivar</div>
+            <div className="brand-tagline">The Plant Journal · Est. 2026</div>
           </div>
         </button>
-
-        {/* Desktop nav */}
-        <nav className="nav-desktop" style={{ display: "flex", gap: 2 }}>
+        <nav className="nav-desktop">
           {items.map(t => (
-            <button key={t.id} className={`pill ${view === t.id ? "on" : ""}`} onClick={() => onNav(t.id)}>
+            <button key={t.id} className={`nav-item btn ${view === t.id ? "on" : ""}`} onClick={() => onNav(t.id)}>
               {t.label}
             </button>
           ))}
         </nav>
-
-        {/* Mobile nav trigger */}
-        <button className="btn nav-mobile" onClick={() => setMenu(m => !m)}
-          style={{
-            width: 40, height: 40, borderRadius: 10,
-            color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-            background: menu ? "rgba(255,255,255,0.15)" : "transparent",
-          }} aria-label="Menu">
-          <Icon n={menu ? "x" : "menu"} s={20} />
+        <button className="btn nav-toggle" onClick={() => setMenu(m => !m)} aria-label="Menu">
+          <Icon n={menu ? "x" : "menu"} s={22} />
         </button>
       </div>
-
-      {/* Mobile sheet */}
       {menu && (
-        <div className="nav-mobile" style={{
-          position: "absolute", top: "100%", left: 0, right: 0,
-          background: "#0f2318", borderTop: "1px solid rgba(255,255,255,0.08)",
-          padding: "8px 14px 14px", animation: "slideDown 0.22s ease",
-        }}>
+        <div className="nav-mobile-sheet">
           {items.map(t => (
-            <button key={t.id} className="btn" onClick={() => { onNav(t.id); setMenu(false); }}
-              style={{
-                display: "block", width: "100%", textAlign: "left",
-                padding: "12px 14px", color: view === t.id ? "#fff" : "rgba(255,255,255,0.75)",
-                background: view === t.id ? "rgba(82,183,136,0.2)" : "transparent",
-                borderRadius: 8, fontSize: 15, fontWeight: 500, marginBottom: 2,
-              }}>
-              {t.label}
+            <button key={t.id} className={`nav-mobile-item btn ${view === t.id ? "on" : ""}`}
+              onClick={() => { onNav(t.id); setMenu(false); }}>
+              <Icon n={t.icon} s={18} />
+              <span>{t.label}</span>
+              <Icon n="arrow" s={14} />
             </button>
           ))}
-          <div style={{
-            marginTop: 8, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.08)",
-            fontSize: 11, color: "rgba(255,255,255,0.45)", letterSpacing: "0.06em",
-          }}>
-            {count > 0 ? `${count.toLocaleString()} plants loaded` : "connecting…"}
-          </div>
         </div>
       )}
     </header>
@@ -533,456 +480,433 @@ const Header = memo(({ view, count, wishCount, cmpCount, onNav, onHome }) => {
 });
 
 // ---------- CATALOG ----------
-function Catalog({
-  loading, plants, totalCount, filtered, searchRaw, setSearchRaw,
-  type, setType, diff, setDiff, tox, setTox, sort, setSort, types,
-  hasActiveFilters, reset, showFilters, setShowFilters,
-  onOpen, onWish, onCmp, isWished, isCmp,
-}) {
-  const filterCount = (type !== "All" ? 1 : 0) + (diff !== "All" ? 1 : 0) + (tox !== "All" ? 1 : 0);
+function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDay, onOpen, onWish, onCmp, isWished, isCmp }) {
+  const isSearching = !!searchRaw.trim();
+  const shelves = useMemo(() => {
+    if (!plants.length) return [];
+    return [
+      { title: "Impossible to Kill", blurb: "For the serial plant-slayers.", f: p => ["Very Easy","Easy"].includes(p.difficulty) && (p.drought_tolerant || p.low_light) },
+      { title: "Dark & Moody", blurb: "Thrive in gloom. Loft apartment energy.", f: p => p.low_light && !p.rare },
+      { title: "The Weirdest Plants Alive", blurb: "Nature showing off.", f: p => p.category === "Carnivorous" || p.rare },
+      { title: "Safe for Furry Companions", blurb: "Dogs and cats approved.", f: p => p.toxicity === "Pet Safe" },
+      { title: "Something in Bloom", blurb: "For color lovers.", f: p => p.flowering },
+      { title: "Desert Dwellers", blurb: "Drought-tolerant rebels.", f: p => p.category === "Succulent" || p.drought_tolerant },
+      { title: "For the Collector", blurb: "Rare finds that turn heads.", f: p => p.rare },
+      { title: "Fragrant Specimens", blurb: "Plants that smell as good as they look.", f: p => p.fragrant },
+      { title: "Edible Garden", blurb: "Grow what you eat.", f: p => p.edible },
+    ].map(s => ({ ...s, items: plants.filter(s.f).slice(0, 10) })).filter(s => s.items.length >= 3);
+  }, [plants]);
 
   return (
     <div className="fade">
-      <div style={{ marginBottom: 16 }}>
-        <h1 className="wm" style={{
-          fontSize: "clamp(24px, 7vw, 34px)",
-          fontWeight: 300, letterSpacing: "-0.03em", lineHeight: 1.05,
-        }}>
-          The Plant <em style={{ fontStyle: "italic", color: "var(--accent)" }}>Intelligence</em> Database
-        </h1>
-        <p style={{ fontSize: 13, color: "var(--ink3)", marginTop: 6 }}>
-          {loading
-            ? "Loading…"
-            : hasActiveFilters
-              ? `${filtered.length} of ${plants.length} plants`
-              : `${plants.length.toLocaleString()} species`}
+      <section className="hero">
+        <div className="hero-eyebrow">Vol. I · The Field Guide</div>
+        <h1 className="hero-title">A <em>curated almanac</em><br/>of living things.</h1>
+        <p className="hero-sub">
+          {loading ? "Opening the greenhouse gates…"
+            : `${plants.length.toLocaleString()} species catalogued. Search by name, mood, or condition — "low light", "pet safe", "something that blooms".`}
         </p>
-      </div>
-
-      {/* SEARCH BAR — sticky on mobile */}
-      <div style={{
-        position: "sticky", top: "calc(56px + env(safe-area-inset-top))",
-        zIndex: 20, background: "var(--bg)",
-        paddingTop: 4, paddingBottom: 10,
-        margin: "0 -14px", padding: "8px 14px",
-      }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <div style={{ flex: 1, position: "relative" }}>
-            <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--ink3)", display: "flex" }}>
-              <Icon n="search" s={16} />
-            </span>
-            <input
-              value={searchRaw}
-              onChange={e => setSearchRaw(e.target.value)}
-              placeholder="Search plants…"
-              type="search"
-              autoComplete="off"
-              style={{
-                width: "100%", padding: "12px 12px 12px 38px",
-                border: "1.5px solid var(--border)", borderRadius: 12,
-                background: "var(--surface)", fontSize: 15,
-                WebkitAppearance: "none",
-              }}
-            />
-            {searchRaw && (
-              <button className="btn" onClick={() => setSearchRaw("")}
-                style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: "var(--ink3)", padding: 6 }}>
-                <Icon n="x" s={15} />
-              </button>
-            )}
-          </div>
-          <button className="btn" onClick={() => setShowFilters(s => !s)}
-            style={{
-              width: 46, height: 46, borderRadius: 12,
-              background: showFilters || filterCount ? "var(--accent)" : "var(--surface)",
-              color: showFilters || filterCount ? "#fff" : "var(--ink2)",
-              border: "1.5px solid var(--border)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              position: "relative",
-            }} aria-label="Filters">
-            <Icon n="filter" s={16} />
-            {filterCount > 0 && (
-              <span style={{
-                position: "absolute", top: -4, right: -4,
-                background: "#c1392b", color: "#fff",
-                fontSize: 10, fontWeight: 700,
-                width: 18, height: 18, borderRadius: 9,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                border: "2px solid var(--bg)",
-              }}>{filterCount}</span>
-            )}
-          </button>
+        <div className="search-wrap">
+          <Icon n="search" s={18} />
+          <input type="search" autoComplete="off" value={searchRaw}
+            onChange={e => setSearchRaw(e.target.value)}
+            placeholder="Try: low light pet safe…"
+            className="search-input" />
+          {searchRaw && (
+            <button className="btn search-clear" onClick={() => setSearchRaw("")}>
+              <Icon n="x" s={16} />
+            </button>
+          )}
         </div>
+      </section>
 
-        {showFilters && (
-          <div style={{
-            marginTop: 10, padding: 12,
-            background: "var(--surface)", borderRadius: 12,
-            border: "1.5px solid var(--border)",
-            display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8,
-            animation: "slideDown 0.2s ease",
-          }}>
-            <Select label="Category" value={type} onChange={setType} options={types} />
-            <Select label="Difficulty" value={diff} onChange={setDiff} options={["All", "Very Easy", "Easy", "Moderate", "Hard", "Expert"]} />
-            <Select label="Safety" value={tox} onChange={setTox} options={["All", "Pet Safe", "Toxic to Pets", "Toxic to Both"]} />
-            <Select label="Sort" value={sort} onChange={setSort} options={[["name","Name"],["rare","Rare first"],["pet_safe","Pet safe first"]]} />
-            {hasActiveFilters && (
-              <button className="btn" onClick={reset}
-                style={{
-                  gridColumn: "1 / -1",
-                  padding: "8px 12px", fontSize: 13, fontWeight: 500,
-                  color: "var(--accent)", background: "var(--accent-bg)",
-                  borderRadius: 8,
-                }}>
-                Clear {filterCount + (searchRaw ? 1 : 0)} filter{(filterCount + (searchRaw ? 1 : 0)) !== 1 ? "s" : ""}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* RESULTS */}
-      {loading ? (
-        <LoadingGrid />
-      ) : filtered.length === 0 ? (
-        <Empty onReset={reset} />
-      ) : (
+      {loading ? <LoadingState />
+       : isSearching ? <SearchResults query={searchRaw} results={filtered} onOpen={onOpen} onWish={onWish} onCmp={onCmp} isWished={isWished} isCmp={isCmp} onClear={() => setSearchRaw("")} />
+       : (
         <>
-          <div className="grid">
-            {filtered.map(p => (
-              <PlantCard key={p.id} plant={p}
-                onOpen={onOpen} onWish={onWish} onCmp={onCmp}
-                wished={isWished(p.id)} comped={isCmp(p.id)} />
+          {plantOfDay && (
+            <section className="featured">
+              <SectionLabel kicker="Today's Specimen" title="Plant of the Day" />
+              <article className="featured-card" onClick={() => onOpen(plantOfDay)}>
+                <div className="featured-image"><PlantImage plant={plantOfDay} height="100%" eager /></div>
+                <div className="featured-body">
+                  <div className="featured-kicker">№ {new Date().toLocaleDateString(undefined, { month: "long", day: "numeric" })}</div>
+                  <h2 className="featured-title">{plantOfDay.common_name}</h2>
+                  <div className="featured-sci">{plantOfDay.scientific_name}</div>
+                  <p className="featured-desc">{plantOfDay.description}</p>
+                  <div className="featured-meta">
+                    {plantOfDay.difficulty && <span>{plantOfDay.difficulty}</span>}
+                    {plantOfDay.sunlight && <span>{plantOfDay.sunlight}</span>}
+                    {plantOfDay.toxicity === "Pet Safe" && <span className="pet-safe">🐾 Pet safe</span>}
+                    {plantOfDay.rare && <span className="rare-tag">✦ Rare</span>}
+                  </div>
+                  <div className="featured-cta">Read the entry <Icon n="arrow" s={14} /></div>
+                </div>
+              </article>
+            </section>
+          )}
+
+          <section className="mood-chips">
+            {[
+              { label: "Low light", q: "low light" },
+              { label: "Pet safe", q: "pet safe" },
+              { label: "Easy for beginners", q: "easy" },
+              { label: "Rare finds", q: "rare" },
+              { label: "Flowering", q: "flowering" },
+              { label: "Edible", q: "edible" },
+              { label: "Drought tolerant", q: "drought" },
+              { label: "Fragrant", q: "fragrant" },
+            ].map(c => (
+              <button key={c.label} className="chip btn" onClick={() => setSearchRaw(c.q)}>{c.label}</button>
             ))}
-          </div>
+          </section>
+
+          {shelves.map((shelf, i) => (
+            <section key={shelf.title} className="shelf" style={{ animationDelay: `${i * 60}ms` }}>
+              <SectionLabel kicker={`Shelf № ${String(i + 1).padStart(2, "0")}`} title={shelf.title} blurb={shelf.blurb} />
+              <div className="shelf-scroll">
+                {shelf.items.map(p => <MiniCard key={p.id} plant={p} onOpen={onOpen} onWish={onWish} wished={isWished(p.id)} />)}
+              </div>
+            </section>
+          ))}
+
+          <section className="full-catalog">
+            <SectionLabel kicker="The Archive" title="Every Species" blurb={`All ${plants.length.toLocaleString()} plants, alphabetically.`} />
+            <div className="grid">
+              {plants.map((p, i) => (
+                <PlantCard key={p.id} plant={p}
+                  onOpen={onOpen} onWish={onWish} onCmp={onCmp}
+                  wished={isWished(p.id)} comped={isCmp(p.id)}
+                  delay={Math.min(i, 18) * 25} />
+              ))}
+            </div>
+          </section>
         </>
       )}
     </div>
   );
 }
 
-const Select = memo(({ label, value, onChange, options }) => (
-  <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-    <span style={{ fontSize: 10, color: "var(--ink3)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>
-      {label}
-    </span>
-    <select value={value} onChange={e => onChange(e.target.value)}
-      style={{
-        padding: "9px 10px", border: "1.5px solid var(--border)", borderRadius: 8,
-        background: "var(--surface2)", fontSize: 14, color: "var(--ink)",
-        WebkitAppearance: "none", appearance: "none",
-        backgroundImage: "url(\"data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239b958e' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e\")",
-        backgroundRepeat: "no-repeat",
-        backgroundPosition: "right 8px center",
-        paddingRight: 28,
-      }}>
-      {options.map(o => Array.isArray(o) ? <option key={o[0]} value={o[0]}>{o[1]}</option> : <option key={o}>{o}</option>)}
-    </select>
-  </label>
+function SectionLabel({ kicker, title, blurb }) {
+  return (
+    <div className="section-label">
+      <div className="section-kicker"><span className="section-rule" /><span>{kicker}</span></div>
+      <h2 className="section-title">{title}</h2>
+      {blurb && <p className="section-blurb">{blurb}</p>}
+    </div>
+  );
+}
+
+function SearchResults({ query, results, onOpen, onWish, onCmp, isWished, isCmp, onClear }) {
+  return (
+    <section className="search-results">
+      <div className="search-head">
+        <div className="section-kicker"><span className="section-rule" /><span>Results</span></div>
+        <h2 className="section-title">
+          {results.length === 0 ? "Nothing found" : `${results.length} ${results.length === 1 ? "match" : "matches"}`}
+          <span className="search-query"> for "{query}"</span>
+        </h2>
+        <button className="btn link-btn" onClick={onClear}>← Back to browse</button>
+      </div>
+      {results.length === 0 ? (
+        <div className="empty">
+          <div className="empty-emoji">🌾</div>
+          <p>No plants match that. Try something simpler — "fern", "pet safe", "succulent".</p>
+        </div>
+      ) : (
+        <div className="grid">
+          {results.map((p, i) => (
+            <PlantCard key={p.id} plant={p}
+              onOpen={onOpen} onWish={onWish} onCmp={onCmp}
+              wished={isWished(p.id)} comped={isCmp(p.id)}
+              delay={Math.min(i, 12) * 30} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------- CARDS ----------
+const MiniCard = memo(({ plant, onOpen, onWish, wished }) => (
+  <article className="mini-card btn" onClick={() => onOpen(plant)}>
+    <div className="mini-image">
+      <PlantImage plant={plant} height={150} />
+      <button className="mini-heart btn" onClick={e => { e.stopPropagation(); onWish(plant); }}
+        aria-label="Save" style={{ color: wished ? "#b84640" : "#4a453c" }}>
+        <Icon n="heart" s={13} />
+      </button>
+    </div>
+    <div className="mini-body">
+      <div className="mini-name">{plant.common_name}</div>
+      <div className="mini-sci">{plant.scientific_name}</div>
+    </div>
+  </article>
 ));
 
-// ---------- PLANT CARD ----------
-const PlantCard = memo(({ plant, onOpen, onWish, onCmp, wished, comped }) => {
-  const dc = DIFF[plant.difficulty] ?? "#7ac44a";
-  return (
-    <article className="card lift" onClick={() => onOpen(plant)}
-      style={{
-        background: "var(--surface)",
-        border: `1.5px solid ${comped ? "var(--accent)" : "var(--border)"}`,
-        borderRadius: 14, overflow: "hidden",
-        boxShadow: comped ? "0 0 0 3px var(--accent-bg)" : "var(--shadow)",
-        cursor: "pointer", position: "relative",
-      }}>
-      <div style={{ height: 3, background: `linear-gradient(90deg, ${dc}, ${dc}44)` }} />
-      <div style={{ position: "relative" }}>
-        <LazyImage plant={plant} height={170} />
-        <div style={{ position: "absolute", top: 10, right: 10, display: "flex", gap: 5 }} onClick={e => e.stopPropagation()}>
-          <button className="btn tap" onClick={() => onWish(plant)}
-            aria-label={wished ? "Remove from saved" : "Save plant"}
-            style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: wished ? "#c1392b" : "rgba(255,255,255,0.94)",
-              color: wished ? "#fff" : "var(--ink3)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              backdropFilter: "blur(6px)", boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-            }}>
-            <Icon n="heart" s={14} />
-          </button>
-          <button className="btn tap" onClick={() => onCmp(plant)}
-            aria-label={comped ? "Remove from compare" : "Add to compare"}
-            style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: comped ? "var(--accent)" : "rgba(255,255,255,0.94)",
-              color: comped ? "#fff" : "var(--ink3)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              backdropFilter: "blur(6px)", boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-            }}>
-            <Icon n="cmp" s={14} />
-          </button>
-        </div>
-        {plant.rare && (
-          <div style={{
-            position: "absolute", top: 10, left: 10,
-            background: "rgba(138,42,42,0.92)", color: "#fff",
-            fontSize: 10, fontWeight: 600, padding: "4px 9px", borderRadius: 99,
-            backdropFilter: "blur(6px)", display: "flex", alignItems: "center", gap: 3,
-          }}>
-            <Icon n="spark" s={9} /> Rare
-          </div>
-        )}
+const PlantCard = memo(({ plant, onOpen, onWish, onCmp, wished, comped, delay = 0 }) => (
+  <article className="card card-fade" onClick={() => onOpen(plant)} style={{ animationDelay: `${delay}ms` }}>
+    <div className="card-image-wrap">
+      <PlantImage plant={plant} height={200} />
+      <div className="card-actions" onClick={e => e.stopPropagation()}>
+        <button className="card-btn btn" onClick={() => onWish(plant)}
+          style={{ background: wished ? "#b84640" : "rgba(244,237,224,0.92)", color: wished ? "#fff" : "#2a2620" }}
+          aria-label="Save"><Icon n="heart" s={13} /></button>
+        <button className="card-btn btn" onClick={() => onCmp(plant)}
+          style={{ background: comped ? "#1e3a27" : "rgba(244,237,224,0.92)", color: comped ? "#fff" : "#2a2620" }}
+          aria-label="Compare"><Icon n="cmp" s={13} /></button>
       </div>
-      <div style={{ padding: "12px 13px 14px" }}>
-        <div className="wm" style={{ fontSize: 17, fontWeight: 500, color: "var(--ink)", marginBottom: 2, letterSpacing: "-0.015em", lineHeight: 1.2 }}>
-          {plant.common_name}
-        </div>
-        <div style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink3)", marginBottom: 8 }}>
-          {plant.scientific_name}
-        </div>
-        <p style={{
-          fontSize: 12.5, color: "var(--ink2)", lineHeight: 1.5, marginBottom: 10,
-          display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden",
-        }}>
-          {plant.description}
-        </p>
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-          <Pill icon="sun" text={plant.sunlight} />
-          <Pill icon="drop" text={plant.watering} />
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--ink2)", fontWeight: 500 }}>
-            <span style={{ width: 6, height: 6, borderRadius: 99, background: dc }} /> {plant.difficulty}
+      {plant.rare && <div className="card-rare"><Icon n="spark" s={9} /> Rare</div>}
+    </div>
+    <div className="card-body">
+      <div className="card-name">{plant.common_name}</div>
+      <div className="card-sci">{plant.scientific_name}</div>
+      <p className="card-desc">{plant.description}</p>
+      <div className="card-meta">
+        {plant.sunlight && <span className="card-meta-item"><Icon n="sun" s={11} />{plant.sunlight}</span>}
+        {plant.watering && <span className="card-meta-item"><Icon n="drop" s={11} />{plant.watering}</span>}
+      </div>
+      <div className="card-footer">
+        {plant.difficulty && (
+          <span className="difficulty-label">
+            <span className="difficulty-dot" data-level={plant.difficulty} />{plant.difficulty}
           </span>
-          {plant.toxicity === "Pet Safe" && (
-            <span style={{ fontSize: 11, color: "var(--accent)", background: "var(--accent-bg)", padding: "2px 8px", borderRadius: 99, fontWeight: 500 }}>
-              🐾 Pet safe
-            </span>
-          )}
-        </div>
+        )}
+        {plant.toxicity === "Pet Safe" && <span className="pet-safe-pill">🐾 Pet safe</span>}
       </div>
-    </article>
-  );
-});
-
-const Pill = memo(({ icon, text }) => text ? (
-  <span style={{
-    display: "inline-flex", alignItems: "center", gap: 4,
-    padding: "3px 8px", borderRadius: 99,
-    background: "var(--surface2)", border: "1px solid var(--border)",
-    fontSize: 11, color: "var(--ink2)",
-  }}>
-    <Icon n={icon} s={10} /> {text}
-  </span>
-) : null);
+    </div>
+  </article>
+));
 
 // ---------- DETAIL ----------
-function Detail({ plant, onBack, onWish, onCmp, wished, comped, toast }) {
-  const [tab, setTab] = useState("varieties");
+function Detail({ plant, plants, onBack, onOpen, onWish, onCmp, onAddCollection, onRemoveCollection, onJournal, journal, wished, comped, owned, toast }) {
+  const [tab, setTab] = useState("story");
+  const [full, setFull] = useState(plant);
   const [varieties, setVarieties] = useState([]);
   const [loadingVars, setLoadingVars] = useState(true);
-  const [full, setFull] = useState(plant);
 
-  // Load full plant details + varieties + prices in parallel, efficiently
   useEffect(() => {
     let cancelled = false;
-    async function load() {
+    async function loadExtra() {
       setLoadingVars(true);
       try {
-        const [fullPlant, vars] = await Promise.all([
+        const [fp, vars] = await Promise.all([
           sb(`plants?id=eq.${plant.id}&select=*`).catch(() => [plant]),
           sb(`varieties?plant_id=eq.${plant.id}&select=id,name,rarity,description,special_traits`).catch(() => []),
         ]);
         if (cancelled) return;
-        if (fullPlant?.[0]) setFull({ ...plant, ...fullPlant[0] });
+        if (fp?.[0]) setFull({ ...plant, ...fp[0] });
         if (vars?.length) {
           const ids = vars.map(v => v.id).join(",");
           const prices = await sb(`prices?variety_id=in.(${ids})&select=variety_id,price_usd,in_stock,retailers(name)`).catch(() => []);
           const byVar = {};
-          for (const p of prices) (byVar[p.variety_id] ??= []).push(p);
+          for (const pr of prices) (byVar[pr.variety_id] ??= []).push(pr);
           if (!cancelled) setVarieties(vars.map(v => ({ ...v, prices: byVar[v.id] ?? [] })));
-        } else {
-          setVarieties([]);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        if (!cancelled) setLoadingVars(false);
-      }
+        } else setVarieties([]);
+      } catch (e) { console.error(e); }
+      finally { if (!cancelled) setLoadingVars(false); }
     }
-    load();
+    loadExtra();
     return () => { cancelled = true; };
   }, [plant.id]);
 
   const share = async () => {
     const url = `${window.location.origin}/plant/${plant.slug}`;
-    if (navigator.share) {
-      try { await navigator.share({ title: plant.common_name, url }); } catch {}
-    } else {
-      try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch { toast("Couldn't copy"); }
-    }
+    if (navigator.share) { try { await navigator.share({ title: plant.common_name, url }); } catch {} }
+    else { try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch { toast("Couldn't copy", "err"); } }
   };
 
-  const dc = DIFF[full.difficulty] ?? "#7ac44a";
+  const related = useMemo(
+    () => plants.filter(p => p.id !== plant.id && p.category === full.category).slice(0, 6),
+    [plants, plant.id, full.category]
+  );
   const allRetailers = useMemo(
-    () => [...new Set(varieties.flatMap(v => v.prices.map(p => p.retailers?.name).filter(Boolean)))].sort(),
+    () => [...new Set(varieties.flatMap(v => v.prices.map(pr => pr.retailers?.name).filter(Boolean)))].sort(),
     [varieties]
   );
 
   return (
-    <div className="fade">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <button className="btn" onClick={onBack}
-          style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--accent)", fontSize: 14, fontWeight: 500, padding: "8px 0" }}>
-          <Icon n="back" s={16} /> Back
-        </button>
-        <button className="btn" onClick={share}
-          style={{
-            display: "flex", alignItems: "center", gap: 5,
-            padding: "8px 14px", background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 99, fontSize: 13, color: "var(--ink2)",
-          }}>
-          <Icon n="share" s={13} /> Share
-        </button>
+    <div className="detail fade">
+      <div className="detail-toolbar">
+        <button className="btn toolbar-btn" onClick={onBack}><Icon n="back" s={16} /> Back</button>
+        <button className="btn toolbar-btn" onClick={share}><Icon n="share" s={14} /> Share</button>
       </div>
 
-      <div className="hero-bg" style={{ borderRadius: 14, overflow: "hidden", marginBottom: 14, boxShadow: "var(--shadow-lg)" }}>
-        <div style={{ position: "relative", height: "clamp(200px, 45vw, 320px)" }}>
-          <LazyImage plant={full} height={"100%"} rounded={0} />
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, transparent 30%, rgba(15,35,24,0.95))" }} />
+      <section className="detail-hero">
+        <div className="detail-hero-image">
+          <PlantImage plant={full} height="100%" eager />
+          <div className="detail-hero-fade" />
         </div>
-        <div style={{ padding: "18px 18px 22px", color: "#fff" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <h1 className="wm" style={{ fontSize: "clamp(22px, 6vw, 30px)", fontWeight: 400, letterSpacing: "-0.025em", lineHeight: 1.1, marginBottom: 3 }}>
-                {full.common_name}
-              </h1>
-              <div style={{ fontSize: 13, fontStyle: "italic", color: "rgba(255,255,255,0.55)", marginBottom: 12 }}>
-                {full.scientific_name}
-              </div>
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                <Chip>{full.category}</Chip>
-                <Chip color={dc}>{full.difficulty}</Chip>
-                <Chip color={full.toxicity === "Pet Safe" ? "#52b788" : "#c1392b"}>
-                  {full.toxicity === "Pet Safe" ? "🐾 Pet Safe" : `⚠ ${full.toxicity}`}
-                </Chip>
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-              <button className="btn tap" onClick={() => onWish(full)}
-                style={{
-                  width: 40, height: 40, borderRadius: 10,
-                  background: wished ? "rgba(193,57,43,0.35)" : "rgba(255,255,255,0.1)",
-                  border: "1px solid rgba(255,255,255,0.2)", color: "#fff",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                <Icon n="heart" s={16} />
-              </button>
-              <button className="btn tap" onClick={() => onCmp(full)}
-                style={{
-                  width: 40, height: 40, borderRadius: 10,
-                  background: comped ? "rgba(82,183,136,0.35)" : "rgba(255,255,255,0.1)",
-                  border: "1px solid rgba(255,255,255,0.2)", color: "#fff",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                <Icon n="cmp" s={16} />
-              </button>
-            </div>
+        <div className="detail-hero-content">
+          <div className="detail-kicker">{full.category ?? "Specimen"}</div>
+          <h1 className="detail-title">{full.common_name}</h1>
+          <div className="detail-sci">{full.scientific_name}</div>
+          <div className="detail-tags">
+            {full.difficulty && <span className="chip-dark">{full.difficulty}</span>}
+            {full.toxicity === "Pet Safe" && <span className="chip-dark pet">🐾 Pet Safe</span>}
+            {full.toxicity && full.toxicity !== "Pet Safe" && <span className="chip-dark tox">⚠ {full.toxicity}</span>}
+            {full.rare && <span className="chip-dark rare">✦ Rare</span>}
           </div>
-          <p style={{ marginTop: 14, fontSize: 14, color: "rgba(255,255,255,0.78)", lineHeight: 1.6, fontWeight: 300 }}>
-            {full.description}
-          </p>
         </div>
-      </div>
+      </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 14 }}>
+      <section className="detail-actions">
+        <button className={`action-btn btn ${owned ? "active" : ""}`}
+          onClick={() => owned ? onRemoveCollection(full.id) : onAddCollection(full)}>
+          <Icon n={owned ? "check" : "plus"} s={16} />
+          <span>{owned ? "In my collection" : "I have this"}</span>
+        </button>
+        <button className={`action-btn btn ${wished ? "active wished" : ""}`} onClick={() => onWish(full)}>
+          <Icon n="heart" s={16} />
+          <span>{wished ? "Saved" : "Wishlist"}</span>
+        </button>
+        <button className={`action-btn btn ${comped ? "active" : ""}`} onClick={() => onCmp(full)}>
+          <Icon n="cmp" s={16} />
+          <span>{comped ? "Comparing" : "Compare"}</span>
+        </button>
+      </section>
+
+      <section className="stat-strip">
         {[
           { i: "sun", l: "Light", v: full.sunlight },
           { i: "drop", l: "Water", v: full.watering },
-          { i: "leaf", l: "Type", v: full.category },
+          { i: "leaf", l: "Category", v: full.category },
         ].map(s => (
-          <div key={s.l} style={{
-            background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 10, padding: 12, textAlign: "center",
-            boxShadow: "var(--shadow)",
-          }}>
-            <div style={{ color: "var(--accent)", marginBottom: 5, display: "flex", justifyContent: "center" }}>
-              <Icon n={s.i} s={18} />
+          <div key={s.l} className="stat">
+            <div className="stat-icon"><Icon n={s.i} s={18} /></div>
+            <div>
+              <div className="stat-label">{s.l}</div>
+              <div className="stat-value">{s.v || "—"}</div>
             </div>
-            <div style={{ fontSize: 10, color: "var(--ink3)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600, marginBottom: 3 }}>{s.l}</div>
-            <div style={{ fontSize: 12, fontWeight: 500, color: "var(--ink)" }}>{s.v || "—"}</div>
           </div>
         ))}
-      </div>
+      </section>
 
-      {/* TABS */}
-      <div className="tabs" style={{ borderBottom: "1px solid var(--border)", marginBottom: 14 }}>
-        {[
-          ["varieties", "Varieties"],
-          ["locations", "Where to Buy"],
-          ["care", "Care"],
-          ["traits", "Traits"],
-        ].map(([id, label]) => (
-          <button key={id} className={`tab ${tab === id ? "on" : ""}`} onClick={() => setTab(id)}>
-            {label}
+      {full.description && (
+        <section className="detail-story">
+          <div className="drop-cap">{full.description.charAt(0)}</div>
+          <p>{full.description.slice(1)}</p>
+          {full.fun_fact && (
+            <aside className="fun-fact">
+              <div className="fun-fact-label">Did You Know</div>
+              <p>{full.fun_fact}</p>
+            </aside>
+          )}
+        </section>
+      )}
+
+      <nav className="tabs">
+        <button className={`tab btn ${tab === "story" ? "on" : ""}`} onClick={() => setTab("story")}>Care</button>
+        {varieties.length > 0 && (
+          <button className={`tab btn ${tab === "varieties" ? "on" : ""}`} onClick={() => setTab("varieties")}>
+            Varieties · {varieties.length}
           </button>
-        ))}
-      </div>
+        )}
+        {allRetailers.length > 0 && (
+          <button className={`tab btn ${tab === "buy" ? "on" : ""}`} onClick={() => setTab("buy")}>Where to Buy</button>
+        )}
+        <button className={`tab btn ${tab === "traits" ? "on" : ""}`} onClick={() => setTab("traits")}>Traits</button>
+        {owned && (
+          <button className={`tab btn ${tab === "journal" ? "on" : ""}`} onClick={() => setTab("journal")}>
+            Journal{journal.length > 0 && ` · ${journal.length}`}
+          </button>
+        )}
+      </nav>
 
+      {tab === "story" && <CareTab plant={full} />}
       {tab === "varieties" && <VarietiesTab loading={loadingVars} varieties={varieties} plantName={full.common_name} />}
-      {tab === "locations" && <LocationsTab retailers={allRetailers} varieties={varieties} plantName={full.common_name} />}
-      {tab === "care" && <CareTab plant={full} />}
+      {tab === "buy" && <LocationsTab retailers={allRetailers} varieties={varieties} plantName={full.common_name} />}
       {tab === "traits" && <TraitsTab plant={full} />}
+      {tab === "journal" && owned && <JournalTab plant={full} entries={journal} onAdd={(text) => onJournal(full.id, text)} />}
+
+      {related.length > 0 && (
+        <section className="related">
+          <SectionLabel kicker="Further Reading" title="Related Specimens" />
+          <div className="shelf-scroll">
+            {related.map(p => <MiniCard key={p.id} plant={p} onOpen={onOpen} onWish={onWish} wished={false} />)}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function CareTab({ plant }) {
+  const sections = [
+    { k: "care_notes", e: "💧", t: "Watering & General Care" },
+    { k: "soil", e: "🪴", t: "Soil & Potting" },
+    { k: "fertilizer", e: "🌿", t: "Feeding" },
+    { k: "propagation", e: "✂️", t: "Propagation" },
+    { k: "temperature", e: "🌡️", t: "Temperature & Humidity" },
+    { k: "common_problems", e: "🔍", t: "Common Problems" },
+  ].filter(s => plant[s.k]);
+  const profile = [
+    ["Native to", plant.native_region],
+    ["Blooms", plant.bloom_season],
+    ["Mature height", plant.mature_height],
+    ["Pairs with", plant.companion_plants],
+  ].filter(([, v]) => v);
+  if (!sections.length && !profile.length) {
+    return <div className="empty"><p>Care guide coming soon for this specimen.</p></div>;
+  }
+  return (
+    <div className="fade care-wrap">
+      {sections.map(s => (
+        <article key={s.k} className="care-section">
+          <h3 className="care-title"><span className="care-emoji">{s.e}</span>{s.t}</h3>
+          <p className="care-body">{plant[s.k]}</p>
+        </article>
+      ))}
+      {profile.length > 0 && (
+        <article className="care-section">
+          <h3 className="care-title"><span className="care-emoji">🌍</span>Field Notes</h3>
+          <dl className="profile-list">
+            {profile.map(([k, v]) => (
+              <div key={k} className="profile-row"><dt>{k}</dt><dd>{v}</dd></div>
+            ))}
+          </dl>
+        </article>
+      )}
     </div>
   );
 }
 
 function VarietiesTab({ loading, varieties, plantName }) {
-  if (loading) return <div style={{ textAlign: "center", padding: 32, color: "var(--ink3)" }}><span className="spinner" style={{ display: "inline-block", marginRight: 8, verticalAlign: "middle" }} /> Loading varieties…</div>;
-  if (!varieties.length) return <div style={{ textAlign: "center", padding: 32, color: "var(--ink3)", fontSize: 13 }}>No varieties in database yet.</div>;
+  if (loading) return <div className="empty"><span className="spinner" /> Loading varieties…</div>;
+  if (!varieties.length) return <div className="empty"><p>No variety records yet.</p></div>;
   return (
-    <div className="fade" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <div className="fade variety-list">
       {varieties.map(v => {
         const ps = v.prices ?? [];
         const minP = ps.length ? Math.min(...ps.map(p => p.price_usd || Infinity)) : null;
         const inStock = ps.some(p => p.in_stock);
         return (
-          <div key={v.id} style={{
-            background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 10, padding: 13, boxShadow: "var(--shadow)",
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8, gap: 10 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 14.5, marginBottom: 3 }}>{v.name}</div>
-                {v.rarity && <div style={{ fontSize: 11, color: "var(--ink3)" }}>{v.rarity}</div>}
+          <article key={v.id} className="variety-card">
+            <div className="variety-head">
+              <div>
+                <div className="variety-name">{v.name}</div>
+                {v.rarity && <div className="variety-rarity">{v.rarity}</div>}
               </div>
-              <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <div className="variety-price-box">
                 {minP !== null && Number.isFinite(minP) ? (
-                  <div style={{ fontSize: 18, fontWeight: 700, color: "var(--accent)", letterSpacing: "-0.02em" }}>${minP}+</div>
-                ) : (
-                  <div style={{ fontSize: 12, color: "var(--ink3)" }}>Price TBA</div>
-                )}
-                {ps.length > 0 && (
-                  <div style={{ fontSize: 11, color: inStock ? "var(--accent)" : "var(--ink3)", fontWeight: 500 }}>
-                    {inStock ? "● In Stock" : "○ Out of Stock"}
-                  </div>
-                )}
+                  <>
+                    <div className="variety-price">${minP}<span>+</span></div>
+                    <div className={`variety-stock ${inStock ? "in" : "out"}`}>{inStock ? "● In stock" : "○ Out of stock"}</div>
+                  </>
+                ) : <div className="variety-stock">Price TBA</div>}
               </div>
             </div>
-            {v.description && <p style={{ fontSize: 12.5, color: "var(--ink2)", lineHeight: 1.5, marginBottom: 8 }}>{v.description}</p>}
+            {v.description && <p className="variety-desc">{v.description}</p>}
             {ps.length > 0 && (
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              <div className="variety-links">
                 {ps.map((p, i) => p.retailers?.name && (
-                  <a key={i} href={retailerLink(p.retailers.name, plantName)} target="_blank" rel="noopener noreferrer"
-                    style={{
-                      fontSize: 12, padding: "4px 10px", borderRadius: 6,
-                      background: "var(--surface2)", border: "1px solid var(--border)",
-                      color: "var(--accent)", textDecoration: "none", fontWeight: 500,
-                    }}>
+                  <a key={i} href={retailerLink(p.retailers.name, plantName)} target="_blank" rel="noopener noreferrer" className="variety-link">
                     {p.retailers.name} · ${p.price_usd}
                   </a>
                 ))}
               </div>
             )}
-          </div>
+          </article>
         );
       })}
     </div>
@@ -990,83 +914,28 @@ function VarietiesTab({ loading, varieties, plantName }) {
 }
 
 function LocationsTab({ retailers, varieties, plantName }) {
-  if (!retailers.length) return <div style={{ textAlign: "center", padding: 32, color: "var(--ink3)", fontSize: 13 }}>No retailer data yet.</div>;
+  if (!retailers.length) return <div className="empty"><p>No retailers listed yet.</p></div>;
   return (
-    <div className="fade grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))" }}>
+    <div className="fade retailer-grid">
       {retailers.map(r => {
         const avail = varieties.filter(v => v.prices.some(p => p.retailers?.name === r));
         return (
-          <div key={r} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 12, boxShadow: "var(--shadow)" }}>
-            <a href={retailerLink(r, plantName)} target="_blank" rel="noopener noreferrer"
-              style={{ fontWeight: 600, fontSize: 13, color: "var(--accent)", textDecoration: "none", display: "block", marginBottom: 8 }}>
-              {r} ↗
+          <article key={r} className="retailer-card">
+            <a href={retailerLink(r, plantName)} target="_blank" rel="noopener noreferrer" className="retailer-name">
+              {r} <Icon n="arrow" s={12} />
             </a>
             {avail.map(v => {
               const pr = v.prices.find(p => p.retailers?.name === r);
               return (
-                <div key={v.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "5px 0", borderTop: "1px solid var(--border)" }}>
-                  <span style={{ color: "var(--ink2)" }}>{v.name}</span>
-                  <span style={{ fontWeight: 600, color: pr?.in_stock ? "var(--accent)" : "var(--ink3)" }}>
-                    {pr?.price_usd ? `$${pr.price_usd}` : "—"}
-                  </span>
+                <div key={v.id} className="retailer-row">
+                  <span>{v.name}</span>
+                  <span className={pr?.in_stock ? "price-in" : "price-out"}>{pr?.price_usd ? `$${pr.price_usd}` : "—"}</span>
                 </div>
               );
             })}
-          </div>
+          </article>
         );
       })}
-    </div>
-  );
-}
-
-function CareTab({ plant }) {
-  const sections = [
-    { k: "care_notes", e: "💧", t: "Watering & Care" },
-    { k: "soil", e: "🪴", t: "Soil & Potting" },
-    { k: "fertilizer", e: "🌿", t: "Fertilizing" },
-    { k: "propagation", e: "✂️", t: "Propagation" },
-    { k: "temperature", e: "🌡️", t: "Temp & Humidity" },
-    { k: "common_problems", e: "🔍", t: "Common Problems" },
-  ].filter(s => plant[s.k]);
-  const hasProfile = plant.native_region || plant.bloom_season || plant.mature_height || plant.fun_fact;
-  if (!sections.length && !hasProfile) return <div style={{ textAlign: "center", padding: 32, color: "var(--ink3)", fontSize: 13 }}>Care guide coming soon.</div>;
-  return (
-    <div className="fade" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {sections.map(s => (
-        <div key={s.k} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 14, boxShadow: "var(--shadow)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-            <span style={{ fontSize: 18 }}>{s.e}</span>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>{s.t}</span>
-          </div>
-          <p style={{ fontSize: 13, color: "var(--ink2)", lineHeight: 1.65 }}>{plant[s.k]}</p>
-        </div>
-      ))}
-      {hasProfile && (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 14, boxShadow: "var(--shadow)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ fontSize: 18 }}>🌍</span>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>Plant Profile</span>
-          </div>
-          {[["Native to", plant.native_region], ["Blooms", plant.bloom_season], ["Height", plant.mature_height]].filter(([,v]) => v).map(([k, v]) => (
-            <div key={k} style={{ display: "flex", gap: 10, fontSize: 13, padding: "4px 0" }}>
-              <span style={{ color: "var(--ink3)", minWidth: 90, fontWeight: 500 }}>{k}</span>
-              <span style={{ color: "var(--ink2)" }}>{v}</span>
-            </div>
-          ))}
-          {plant.fun_fact && (
-            <div style={{
-              marginTop: 10, padding: "10px 12px",
-              background: "var(--accent-bg)", borderRadius: 8,
-              border: "1px solid var(--accent)",
-            }}>
-              <div style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                🌱 Did You Know
-              </div>
-              <p style={{ fontSize: 12.5, color: "var(--ink2)", lineHeight: 1.55 }}>{plant.fun_fact}</p>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -1085,76 +954,99 @@ function TraitsTab({ plant }) {
     { l: "Rare Species", v: plant.rare, i: "✦" },
   ];
   return (
-    <div className="fade" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: 12, boxShadow: "var(--shadow)" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>
-        {traits.map(t => (
-          <div key={t.l} style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "9px 11px", borderRadius: 8,
-            background: t.v ? "var(--accent-bg)" : "var(--surface2)",
-            border: `1px solid ${t.v ? "var(--accent)" : "var(--border)"}`,
-          }}>
-            <span style={{ fontSize: 16 }}>{t.i}</span>
-            <span style={{ fontSize: 12, fontWeight: 500, color: t.v ? "var(--accent)" : "var(--ink3)" }}>{t.l}</span>
-            <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, color: t.v ? "var(--accent)" : "var(--ink3)" }}>
-              {t.v ? "✓" : "—"}
-            </span>
-          </div>
-        ))}
-      </div>
+    <div className="fade traits-grid">
+      {traits.map(t => (
+        <div key={t.l} className={`trait ${t.v ? "on" : ""}`}>
+          <span className="trait-i">{t.i}</span>
+          <span className="trait-l">{t.l}</span>
+          <span className="trait-v">{t.v ? "✓" : "—"}</span>
+        </div>
+      ))}
     </div>
   );
 }
 
-// ---------- COMPARE ----------
-function Compare({ plants, onRemove, onOpen }) {
-  if (!plants.length) return (
-    <div className="fade" style={{ textAlign: "center", padding: "60px 20px" }}>
-      <div style={{ fontSize: 56, marginBottom: 14 }}>🌿</div>
-      <div className="wm" style={{ fontSize: 22, marginBottom: 8 }}>No plants to compare</div>
-      <p style={{ fontSize: 14, color: "var(--ink3)" }}>Tap the compare icon on up to 3 plants.</p>
+function JournalTab({ plant, entries, onAdd }) {
+  const [text, setText] = useState("");
+  const submit = (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    onAdd(text.trim());
+    setText("");
+  };
+  return (
+    <div className="fade journal">
+      <form onSubmit={submit} className="journal-form">
+        <textarea value={text} onChange={e => setText(e.target.value)}
+          placeholder={`Log an entry for your ${plant.common_name}… repotted today, new leaf, watered, blooming`} rows={3} />
+        <div className="journal-form-actions">
+          <button type="submit" className="btn journal-submit" disabled={!text.trim()}>
+            <Icon n="book" s={14} /> Log entry
+          </button>
+        </div>
+      </form>
+      {entries.length === 0 ? (
+        <div className="empty"><p>No entries yet. Start documenting your plant's journey.</p></div>
+      ) : (
+        <div className="journal-entries">
+          {[...entries].reverse().map(e => (
+            <article key={e.id} className="journal-entry">
+              <div className="journal-date">
+                {new Date(e.date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}
+              </div>
+              <p>{e.text}</p>
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
+}
+
+function Compare({ plants, onRemove, onOpen }) {
+  if (!plants.length) return (
+    <EmptyState emoji="🌿" title="Nothing to compare yet" body="Tap the compare icon on up to 3 plants to see them side by side." />
+  );
   const rows = [
-    ["Species", p => <em style={{ fontSize: 12 }}>{p.scientific_name}</em>],
-    ["Category", p => p.category],
-    ["Difficulty", p => <span style={{ color: DIFF[p.difficulty], fontWeight: 600 }}>{p.difficulty}</span>],
-    ["Light", p => p.sunlight],
-    ["Water", p => p.watering],
-    ["Toxicity", p => <span style={{ color: p.toxicity === "Pet Safe" ? "var(--accent)" : "#c1392b", fontWeight: 500 }}>{p.toxicity}</span>],
+    ["Species", p => <em>{p.scientific_name}</em>],
+    ["Category", p => p.category ?? "—"],
+    ["Difficulty", p => p.difficulty ?? "—"],
+    ["Light", p => p.sunlight ?? "—"],
+    ["Water", p => p.watering ?? "—"],
+    ["Pet Safe", p => p.toxicity === "Pet Safe" ? "✓" : "✗"],
     ["Air Purifying", p => p.air_purifying ? "✓" : "—"],
     ["Low Light", p => p.low_light ? "✓" : "—"],
+    ["Drought Tolerant", p => p.drought_tolerant ? "✓" : "—"],
     ["Edible", p => p.edible ? "✓" : "—"],
+    ["Flowering", p => p.flowering ? "✓" : "—"],
     ["Rare", p => p.rare ? "✦" : "—"],
   ];
   return (
-    <div className="fade">
-      <h2 className="wm" style={{ fontSize: 24, marginBottom: 14 }}>Compare</h2>
-      <div style={{ overflowX: "auto", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, boxShadow: "var(--shadow)" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 360 }}>
+    <div className="fade page-wrap">
+      <SectionLabel kicker="Side by Side" title="Compare" blurb="Weighing your options." />
+      <div className="compare-table-wrap">
+        <table className="compare-table">
           <thead>
-            <tr style={{ background: "var(--surface2)" }}>
-              <th style={{ padding: 12, width: 100 }}></th>
+            <tr>
+              <th></th>
               {plants.map(p => (
-                <th key={p.id} style={{ padding: 12, textAlign: "left", borderLeft: "1px solid var(--border)", minWidth: 140 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
-                    <button className="btn" onClick={() => onOpen(p)} style={{ textAlign: "left", minWidth: 0 }}>
-                      <LazyImage plant={p} height={56} rounded={6} />
-                      <div className="wm" style={{ fontSize: 13, fontWeight: 500, marginTop: 5, color: "var(--ink)" }}>{p.common_name}</div>
-                    </button>
-                    <button className="btn" onClick={() => onRemove(p.id)} style={{ color: "#c1392b", padding: 4 }}>
-                      <Icon n="x" s={13} />
-                    </button>
-                  </div>
+                <th key={p.id}>
+                  <button className="btn" onClick={() => onOpen(p)} style={{ textAlign: "left", width: "100%" }}>
+                    <PlantImage plant={p} height={90} rounded={2} />
+                    <div className="compare-head-name">{p.common_name}</div>
+                  </button>
+                  <button className="btn compare-remove" onClick={() => onRemove(p.id)}>
+                    <Icon n="x" s={12} /> Remove
+                  </button>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map(([label, fn], i) => (
-              <tr key={label} style={{ background: i % 2 === 0 ? "var(--surface)" : "var(--surface2)" }}>
-                <td style={{ padding: "10px 14px", fontSize: 11, color: "var(--ink3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", borderRight: "1px solid var(--border)" }}>{label}</td>
-                {plants.map(p => <td key={p.id} style={{ padding: "10px 14px", fontSize: 13, borderLeft: "1px solid var(--border)" }}>{fn(p)}</td>)}
+            {rows.map(([label, fn]) => (
+              <tr key={label}>
+                <td className="compare-label">{label}</td>
+                {plants.map(p => <td key={p.id}>{fn(p)}</td>)}
               </tr>
             ))}
           </tbody>
@@ -1164,30 +1056,26 @@ function Compare({ plants, onRemove, onOpen }) {
   );
 }
 
-// ---------- WISHLIST ----------
 function Wishlist({ plants, onOpen, onRemove }) {
   if (!plants.length) return (
-    <div className="fade" style={{ textAlign: "center", padding: "60px 20px" }}>
-      <div style={{ fontSize: 56, marginBottom: 14 }}>🌱</div>
-      <div className="wm" style={{ fontSize: 22, marginBottom: 8 }}>No saved plants yet</div>
-      <p style={{ fontSize: 14, color: "var(--ink3)" }}>Tap the heart on any plant to save.</p>
-    </div>
+    <EmptyState emoji="🌱" title="Your wishlist is empty" body="Tap the heart on any plant to save it here for later." />
   );
   return (
-    <div className="fade">
-      <h2 className="wm" style={{ fontSize: 24, marginBottom: 14 }}>Saved</h2>
+    <div className="fade page-wrap">
+      <SectionLabel kicker="Saved for Later" title="Wishlist" blurb={`${plants.length} plant${plants.length !== 1 ? "s" : ""} you'd like to bring home.`} />
       <div className="grid">
-        {plants.map(p => (
-          <article key={p.id} className="card lift" onClick={() => onOpen(p)}
-            style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", boxShadow: "var(--shadow)", cursor: "pointer", position: "relative" }}>
-            <LazyImage plant={p} height={140} />
-            <button className="btn tap" onClick={e => { e.stopPropagation(); onRemove(p.id); }}
-              style={{ position: "absolute", top: 10, right: 10, width: 32, height: 32, borderRadius: 8, background: "rgba(255,255,255,0.94)", color: "#c1392b", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(0,0,0,0.15)" }}>
-              <Icon n="x" s={14} />
-            </button>
-            <div style={{ padding: 12 }}>
-              <div className="wm" style={{ fontSize: 16, fontWeight: 500, marginBottom: 2 }}>{p.common_name}</div>
-              <div style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink3)" }}>{p.scientific_name}</div>
+        {plants.map((p, i) => (
+          <article key={p.id} className="card card-fade" onClick={() => onOpen(p)} style={{ animationDelay: `${i * 30}ms` }}>
+            <div className="card-image-wrap">
+              <PlantImage plant={p} height={200} />
+              <button className="card-btn btn card-btn-single" onClick={e => { e.stopPropagation(); onRemove(p.id); }}
+                style={{ background: "rgba(244,237,224,0.92)", color: "#b84640" }} aria-label="Remove">
+                <Icon n="x" s={13} />
+              </button>
+            </div>
+            <div className="card-body">
+              <div className="card-name">{p.common_name}</div>
+              <div className="card-sci">{p.scientific_name}</div>
             </div>
           </article>
         ))}
@@ -1196,40 +1084,112 @@ function Wishlist({ plants, onOpen, onRemove }) {
   );
 }
 
-// ---------- QUIZ ----------
+function Collection({ items, allPlants, journal, onOpen, onRemove }) {
+  const stats = useMemo(() => {
+    const full = items.map(i => allPlants.find(p => p.id === i.id) ?? i);
+    return {
+      total: items.length,
+      rare: full.filter(p => p.rare).length,
+      petSafe: full.filter(p => p.toxicity === "Pet Safe").length,
+      flowering: full.filter(p => p.flowering).length,
+      entries: Object.values(journal).reduce((s, a) => s + a.length, 0),
+      categories: [...new Set(full.map(p => p.category).filter(Boolean))],
+    };
+  }, [items, allPlants, journal]);
+
+  if (!items.length) return (
+    <EmptyState emoji="🪴" title="Your collection awaits" body="When you get a plant, tap 'I have this' on its page. Track its journey with journal entries — watering, repotting, new leaves, blooms." />
+  );
+
+  return (
+    <div className="fade page-wrap">
+      <SectionLabel kicker="Your Greenhouse" title="My Collection" blurb="Every specimen in your care." />
+      <div className="stats-grid">
+        <div className="stat-big"><div className="stat-num">{stats.total}</div><div className="stat-lbl">Plants</div></div>
+        <div className="stat-big"><div className="stat-num">{stats.rare}</div><div className="stat-lbl">Rare</div></div>
+        <div className="stat-big"><div className="stat-num">{stats.petSafe}</div><div className="stat-lbl">Pet Safe</div></div>
+        <div className="stat-big"><div className="stat-num">{stats.flowering}</div><div className="stat-lbl">Flowering</div></div>
+        <div className="stat-big"><div className="stat-num">{stats.entries}</div><div className="stat-lbl">Journal Entries</div></div>
+      </div>
+      {stats.categories.length > 0 && (
+        <div className="collection-categories">
+          {stats.categories.map(c => <span key={c} className="category-tag">{c}</span>)}
+        </div>
+      )}
+      <div className="grid">
+        {items.map((item, i) => {
+          const full = allPlants.find(p => p.id === item.id) ?? item;
+          const entries = journal[item.id] ?? [];
+          return (
+            <article key={item.id} className="card card-fade" onClick={() => onOpen(item.slug)} style={{ animationDelay: `${i * 30}ms` }}>
+              <div className="card-image-wrap">
+                <PlantImage plant={full} height={200} />
+                <button className="card-btn btn card-btn-single" onClick={e => { e.stopPropagation(); onRemove(item.id); }}
+                  style={{ background: "rgba(244,237,224,0.92)", color: "#6b6155" }} aria-label="Remove">
+                  <Icon n="x" s={13} />
+                </button>
+                {entries.length > 0 && (
+                  <div className="journal-badge"><Icon n="book" s={10} /> {entries.length}</div>
+                )}
+              </div>
+              <div className="card-body">
+                <div className="card-name">{item.common_name}</div>
+                <div className="card-sci">{item.scientific_name}</div>
+                <div className="card-owned-since">
+                  In collection since {new Date(item.added).toLocaleDateString(undefined, { month: "short", year: "numeric" })}
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Quiz({ plants, onOpen }) {
   const [step, setStep] = useState(0);
   const [ans, setAns] = useState({});
   const [results, setResults] = useState(null);
 
   const questions = [
-    { id: "light", emoji: "☀️", question: "Light in your space?", options: [
-      { label: "Bright & sunny", v: "bright" }, { label: "Medium indirect", v: "medium" },
-      { label: "Pretty dim", v: "low" }, { label: "Almost no light", v: "verylow" },
+    { id: "light", emoji: "☀️", q: "What's the light like where you want a plant?", options: [
+      { l: "Bright & sunny spot", v: "bright" },
+      { l: "Medium indirect", v: "medium" },
+      { l: "Pretty dim", v: "low" },
+      { l: "Almost no natural light", v: "verylow" },
     ]},
-    { id: "water", emoji: "💧", question: "How often do you water?", options: [
-      { label: "Every few days", v: "frequent" }, { label: "Once a week", v: "weekly" },
-      { label: "When I remember", v: "infrequent" }, { label: "Almost never", v: "rare" },
+    { id: "water", emoji: "💧", q: "Honestly — how often will you remember to water?", options: [
+      { l: "Every few days, I'm dedicated", v: "frequent" },
+      { l: "Once a week, probably", v: "weekly" },
+      { l: "When I remember… oops", v: "infrequent" },
+      { l: "Almost never", v: "rare" },
     ]},
-    { id: "pets", emoji: "🐾", question: "Pets or small kids?", options: [
-      { label: "Dogs or cats", v: "pets" }, { label: "Small kids", v: "kids" },
-      { label: "Both", v: "both" }, { label: "None", v: "none" },
+    { id: "pets", emoji: "🐾", q: "Anyone chewing on things?", options: [
+      { l: "Dogs or cats in the house", v: "pets" },
+      { l: "Small kids around", v: "kids" },
+      { l: "Both!", v: "both" },
+      { l: "All clear", v: "none" },
     ]},
-    { id: "exp", emoji: "🌿", question: "Experience?", options: [
-      { label: "Everything dies", v: "beginner" }, { label: "Some alive", v: "some" },
-      { label: "Pretty confident", v: "experienced" }, { label: "Expert", v: "expert" },
+    { id: "exp", emoji: "🌿", q: "Plant track record?", options: [
+      { l: "Everything I touch dies", v: "beginner" },
+      { l: "A few have survived", v: "some" },
+      { l: "Pretty confident", v: "experienced" },
+      { l: "I am the plant whisperer", v: "expert" },
     ]},
-    { id: "vibe", emoji: "🏡", question: "What's your vibe?", options: [
-      { label: "Big statement plant", v: "statement" }, { label: "Cute shelf plant", v: "small" },
-      { label: "Rare & impressive", v: "rare" }, { label: "Something flowering", v: "flowering" },
+    { id: "vibe", emoji: "🏡", q: "What's the vibe you want?", options: [
+      { l: "Big dramatic statement", v: "statement" },
+      { l: "Cute little shelf plant", v: "small" },
+      { l: "Rare & impressive", v: "rare" },
+      { l: "Something that flowers", v: "flowering" },
     ]},
   ];
 
   const score = (p, a) => {
     let s = 0;
-    const lm = { bright: ["Full Sun", "Bright Indirect"], medium: ["Bright Indirect", "Medium Light"], low: ["Low Light", "Medium Light"], verylow: ["Low Light"] };
+    const lm = { bright: ["Full Sun","Bright Indirect"], medium: ["Bright Indirect","Medium"], low: ["Low","Medium"], verylow: ["Low"] };
     if (lm[a.light]?.some(x => p.sunlight?.includes(x))) s += 3;
-    const wm = { frequent: ["Frequent", "Moderate"], weekly: ["Moderate", "Weekly"], infrequent: ["Low", "Weekly"], rare: ["Low", "Very Low"] };
+    const wm = { frequent: ["Frequent","Moderate"], weekly: ["Moderate","Weekly"], infrequent: ["Low","Weekly"], rare: ["Low","Very Low"] };
     if (wm[a.water]?.some(x => p.watering?.includes(x))) s += 3;
     if (a.water === "rare" && p.drought_tolerant) s += 2;
     if (["pets","kids","both"].includes(a.pets) && p.toxicity === "Pet Safe") s += 4;
@@ -1238,6 +1198,7 @@ function Quiz({ plants, onOpen }) {
     if (a.vibe === "rare" && p.rare) s += 4;
     if (a.vibe === "flowering" && p.flowering) s += 4;
     if ((a.light === "low" || a.light === "verylow") && p.low_light) s += 3;
+    if (a.vibe === "small" && p.category === "Succulent") s += 2;
     return s;
   };
 
@@ -1250,57 +1211,55 @@ function Quiz({ plants, onOpen }) {
   };
 
   if (results) return (
-    <div className="fade">
-      <div style={{ textAlign: "center", marginBottom: 24 }}>
-        <div style={{ fontSize: 48 }}>🌿</div>
-        <h2 className="wm" style={{ fontSize: 26, fontWeight: 400 }}>Your Matches</h2>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+    <div className="fade quiz-results">
+      <SectionLabel kicker="The Verdict" title="Your Perfect Match" blurb="Based on your conditions and vibe." />
+      <div className="results-list">
         {results.map((p, i) => (
-          <article key={p.id} className="lift" onClick={() => onOpen(p)}
-            style={{ background: "var(--surface)", border: `1.5px solid ${i === 0 ? "var(--accent)" : "var(--border)"}`, borderRadius: 12, overflow: "hidden", boxShadow: i === 0 ? "0 0 0 3px var(--accent-bg)" : "var(--shadow)", cursor: "pointer", display: "flex" }}>
-            <div style={{ width: 100, flexShrink: 0 }}>
-              <LazyImage plant={p} height={100} rounded={0} />
+          <article key={p.id} className={`result-card ${i === 0 ? "best" : ""}`} onClick={() => onOpen(p)}>
+            <div className="result-image">
+              <PlantImage plant={p} height={140} eager />
+              {i === 0 && <div className="result-badge">Best Match</div>}
+              {i === 1 && <div className="result-badge gray">2nd</div>}
+              {i === 2 && <div className="result-badge gray">3rd</div>}
             </div>
-            <div style={{ padding: 12, flex: 1 }}>
-              {i === 0 && <span style={{ fontSize: 10, fontWeight: 700, color: "var(--accent)", background: "var(--accent-bg)", padding: "2px 8px", borderRadius: 99, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4, display: "inline-block" }}>Best Match</span>}
-              <div className="wm" style={{ fontSize: 16, fontWeight: 500 }}>{p.common_name}</div>
-              <div style={{ fontSize: 12, fontStyle: "italic", color: "var(--ink3)" }}>{p.scientific_name}</div>
+            <div className="result-body">
+              <h3 className="result-name">{p.common_name}</h3>
+              <div className="result-sci">{p.scientific_name}</div>
+              <p className="result-desc">{p.description}</p>
+              <div className="result-cta">Read the entry <Icon n="arrow" s={14} /></div>
             </div>
           </article>
         ))}
       </div>
-      <button className="btn" onClick={() => { setStep(0); setAns({}); setResults(null); }}
-        style={{ padding: "11px 24px", background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 99, fontSize: 14, fontWeight: 500, color: "var(--ink2)", margin: "0 auto", display: "block" }}>
-        Retake
+      <button className="btn retake" onClick={() => { setStep(0); setAns({}); setResults(null); }}>
+        Retake the quiz
       </button>
     </div>
   );
 
   const q = questions[step];
   return (
-    <div className="fade" style={{ maxWidth: 520, margin: "0 auto" }}>
-      <div style={{ marginBottom: 24, textAlign: "center" }}>
-        <div style={{ display: "flex", justifyContent: "center", gap: 5, marginBottom: 16 }}>
-          {questions.map((_, i) => (
-            <div key={i} style={{ height: 4, width: i === step ? 26 : 14, borderRadius: 99, background: i <= step ? "var(--accent)" : "var(--border)", transition: "all 0.3s" }} />
-          ))}
-        </div>
-        <div style={{ fontSize: 44, marginBottom: 10 }}>{q.emoji}</div>
-        <h2 className="wm" style={{ fontSize: 22, fontWeight: 400, marginBottom: 4 }}>{q.question}</h2>
-        <p style={{ fontSize: 12, color: "var(--ink3)" }}>{step + 1} of {questions.length}</p>
+    <div className="fade quiz">
+      <div className="quiz-progress">
+        {questions.map((_, i) => (
+          <span key={i} className={`progress-dot ${i === step ? "active" : ""} ${i < step ? "done" : ""}`} />
+        ))}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {q.options.map(o => (
-          <button key={o.v} className="btn lift" onClick={() => answer(o.v)}
-            style={{ padding: "15px 18px", background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 12, fontSize: 15, color: "var(--ink)", textAlign: "left", boxShadow: "var(--shadow)" }}>
-            {o.label}
+      <div className="quiz-header">
+        <div className="quiz-emoji">{q.emoji}</div>
+        <h2 className="quiz-q">{q.q}</h2>
+        <div className="quiz-step">Question {step + 1} of {questions.length}</div>
+      </div>
+      <div className="quiz-options">
+        {q.options.map((o, i) => (
+          <button key={o.v} className="quiz-option btn" onClick={() => answer(o.v)} style={{ animationDelay: `${i * 60}ms` }}>
+            <span>{o.l}</span>
+            <Icon n="arrow" s={14} />
           </button>
         ))}
       </div>
       {step > 0 && (
-        <button className="btn" onClick={() => setStep(step - 1)}
-          style={{ marginTop: 14, fontSize: 13, color: "var(--ink3)", display: "flex", alignItems: "center", gap: 4 }}>
+        <button className="btn quiz-back" onClick={() => setStep(step - 1)}>
           <Icon n="back" s={13} /> Back
         </button>
       )}
@@ -1308,52 +1267,32 @@ function Quiz({ plants, onOpen }) {
   );
 }
 
-// ---------- HELPERS ----------
-function Chip({ children, color }) {
-  return <span style={{
-    background: color ? `${color}33` : "rgba(255,255,255,0.1)",
-    border: `1px solid ${color ? `${color}55` : "rgba(255,255,255,0.18)"}`,
-    borderRadius: 99, padding: "3px 10px", fontSize: 12, color: "rgba(255,255,255,0.9)", fontWeight: 500,
-  }}>{children}</span>;
-}
-
-function LoadingGrid() {
+function LoadingState() {
   return (
-    <div className="grid">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden", boxShadow: "var(--shadow)" }}>
-          <div className="shim" style={{ height: 170 }} />
-          <div style={{ padding: 13 }}>
-            <div className="shim" style={{ height: 16, width: "70%", borderRadius: 4, marginBottom: 6 }} />
-            <div className="shim" style={{ height: 11, width: "50%", borderRadius: 4, marginBottom: 10 }} />
-            <div className="shim" style={{ height: 10, width: "100%", borderRadius: 4, marginBottom: 4 }} />
-            <div className="shim" style={{ height: 10, width: "80%", borderRadius: 4 }} />
-          </div>
-        </div>
-      ))}
+    <div className="loading">
+      <div className="spinner-big" />
+      <p>Unfolding the field guide…</p>
     </div>
   );
 }
 
-function Empty({ onReset }) {
+function EmptyState({ emoji, title, body }) {
   return (
-    <div style={{ textAlign: "center", padding: "48px 20px", color: "var(--ink3)" }}>
-      <div style={{ fontSize: 42, marginBottom: 10 }}>🌾</div>
-      <div className="wm" style={{ fontSize: 20, color: "var(--ink2)", marginBottom: 4 }}>Nothing matches</div>
-      <div style={{ fontSize: 13, marginBottom: 14 }}>Try adjusting your filters</div>
-      <button className="btn" onClick={onReset} style={{ fontSize: 14, color: "var(--accent)", fontWeight: 500, padding: "8px 16px", background: "var(--accent-bg)", borderRadius: 99 }}>
-        Clear filters
-      </button>
+    <div className="empty-page fade">
+      <div className="empty-emoji-big">{emoji}</div>
+      <h2>{title}</h2>
+      <p>{body}</p>
     </div>
   );
 }
 
 function Footer({ count }) {
   return (
-    <footer style={{ borderTop: "1px solid var(--border)", padding: "20px 14px calc(20px + env(safe-area-inset-bottom))", textAlign: "center", color: "var(--ink3)", fontSize: 11 }}>
-      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <div className="wm" style={{ fontSize: 14, color: "var(--ink2)", marginBottom: 4 }}>Cultivar</div>
-        <div>{count.toLocaleString()} species · images from Wikipedia · prices updated weekly</div>
+    <footer className="footer">
+      <div className="footer-inner">
+        <div className="footer-mark">Cultivar</div>
+        <div className="footer-tag">The Plant Journal · Vol. I · {count.toLocaleString()} species</div>
+        <div className="footer-meta">Imagery from Wikimedia Commons · Prices updated weekly · Est. 2026</div>
       </div>
     </footer>
   );
@@ -1363,59 +1302,979 @@ function Footer({ count }) {
 function Styles() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Fraunces:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&family=Inter+Tight:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap');
       :root {
-        --bg: #f7f5f0; --surface: #fff; --surface2: #f2efe9;
-        --border: #e2ddd6;
-        --ink: #1a1814; --ink2: #6b6560; --ink3: #9b958e;
-        --accent: #2d6a4f; --accent-bg: #e8f5ee;
-        --shadow: 0 2px 12px rgba(26,24,20,0.05);
-        --shadow-lg: 0 8px 32px rgba(26,24,20,0.12);
+        --cream: #f4ede0;
+        --cream-deep: #ebe2d1;
+        --paper: #f9f4ea;
+        --ink: #2a2620;
+        --ink-soft: #4a453c;
+        --ink-faint: #8a8173;
+        --moss: #1e3a27;
+        --moss-light: #3d6b4d;
+        --moss-bg: #e8ede0;
+        --rust: #b84640;
+        --rust-bg: #f5e5e0;
+        --gold: #a67c2e;
+        --border: #d8cfbe;
+        --border-soft: #e6dcc8;
+        --shadow-soft: 0 1px 3px rgba(42,38,32,0.04), 0 4px 16px rgba(42,38,32,0.06);
+        --shadow-lift: 0 4px 14px rgba(42,38,32,0.08), 0 14px 40px rgba(42,38,32,0.1);
       }
       * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-      html, body { font-family: 'DM Sans', system-ui, sans-serif; overscroll-behavior-y: none; }
-      body { background: var(--bg); }
-      ::-webkit-scrollbar { width: 4px; height: 4px; }
-      ::-webkit-scrollbar-thumb { background: #cec9c0; border-radius: 99px; }
-      .btn { cursor: pointer; border: none; background: transparent; transition: opacity 0.15s, transform 0.15s; font-family: inherit; font-size: inherit; color: inherit; }
-      .btn:active { opacity: 0.8; transform: scale(0.97); }
-      .tap { min-width: 44px; min-height: 44px; } /* touch targets */
+      html, body { font-family: 'Inter Tight', system-ui, sans-serif; color: var(--ink); overscroll-behavior-y: none; }
+      body {
+        background: var(--cream);
+        background-image:
+          radial-gradient(ellipse at 20% 10%, rgba(61,107,77,0.04), transparent 60%),
+          radial-gradient(ellipse at 85% 80%, rgba(166,124,46,0.04), transparent 55%);
+      }
+      .app {
+        min-height: 100vh;
+        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0.16 0 0 0 0 0.15 0 0 0 0 0.12 0 0 0 0.04 0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+      ::selection { background: var(--moss); color: var(--cream); }
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+      ::-webkit-scrollbar-thumb:hover { background: var(--ink-faint); }
+
+      .btn {
+        cursor: pointer; border: none; background: transparent;
+        color: inherit; font: inherit;
+        transition: opacity 0.15s, transform 0.15s;
+      }
+      .btn:active { opacity: 0.7; transform: scale(0.98); }
+      @media (hover: hover) { .btn:hover { opacity: 0.88; } }
+
+      .header {
+        position: sticky; top: 0; z-index: 100;
+        background: var(--cream);
+        border-bottom: 1px solid var(--border);
+        padding-top: env(safe-area-inset-top);
+      }
+      .header-inner {
+        max-width: 1240px; margin: 0 auto;
+        padding: 0 20px; height: 64px;
+        display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      }
+      .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+      .brand-mark {
+        width: 34px; height: 34px;
+        background: var(--moss); color: var(--cream);
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 2px;
+        box-shadow: 0 1px 3px rgba(30,58,39,0.3);
+      }
+      .brand-text { text-align: left; }
+      .brand-name {
+        font-family: 'Fraunces', serif; font-weight: 500;
+        font-size: 22px; letter-spacing: -0.025em; line-height: 1;
+      }
+      .brand-tagline {
+        font-size: 10px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.15em;
+        margin-top: 3px; font-weight: 500;
+      }
+      .nav-desktop { display: flex; gap: 4px; }
+      .nav-item {
+        padding: 8px 14px;
+        font-size: 13px; font-weight: 500;
+        color: var(--ink-soft); letter-spacing: 0.01em;
+        border-radius: 2px;
+        position: relative;
+      }
+      .nav-item::after {
+        content: ''; position: absolute;
+        left: 14px; right: 14px; bottom: 4px;
+        height: 1px; background: var(--moss);
+        transform: scaleX(0); transform-origin: left;
+        transition: transform 0.24s ease;
+      }
+      .nav-item.on { color: var(--moss); }
+      .nav-item.on::after, .nav-item:hover::after { transform: scaleX(1); }
+      .nav-toggle { display: none; width: 40px; height: 40px; border-radius: 4px; color: var(--ink); }
+      @media (max-width: 780px) {
+        .nav-desktop { display: none; }
+        .nav-toggle { display: flex; align-items: center; justify-content: center; }
+        .brand-tagline { display: none; }
+        .header-inner { height: 58px; padding: 0 16px; }
+      }
+      .nav-mobile-sheet {
+        position: absolute; top: 100%; left: 0; right: 0;
+        background: var(--cream);
+        border-bottom: 1px solid var(--border);
+        padding: 8px 12px 14px;
+        animation: slideDown 0.22s ease;
+        box-shadow: 0 10px 24px rgba(42,38,32,0.06);
+      }
+      .nav-mobile-item {
+        display: flex; align-items: center; gap: 12px;
+        width: 100%; padding: 14px;
+        font-size: 15px; font-weight: 500; color: var(--ink-soft);
+        border-radius: 2px; text-align: left;
+      }
+      .nav-mobile-item.on { color: var(--moss); background: var(--moss-bg); }
+      .nav-mobile-item span { flex: 1; }
+      .nav-mobile-item svg:last-child { opacity: 0.4; }
+
+      .main {
+        max-width: 1240px; margin: 0 auto;
+        padding: 24px 20px 80px;
+      }
+      @media (max-width: 600px) { .main { padding: 16px 16px 80px; } }
+
+      .error-card {
+        padding: 14px 18px; background: var(--rust-bg);
+        border-left: 3px solid var(--rust);
+        color: var(--ink); font-size: 14px;
+        margin-bottom: 20px;
+        display: flex; justify-content: space-between; align-items: center; gap: 12px;
+        border-radius: 2px;
+      }
+      .error-card .btn { color: var(--rust); font-weight: 600; text-decoration: underline; }
+
+      .hero { padding: 28px 0 36px; border-bottom: 1px solid var(--border-soft); margin-bottom: 48px; }
+      .hero-eyebrow {
+        font-size: 11px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.28em;
+        font-weight: 600; margin-bottom: 22px;
+        display: flex; align-items: center; gap: 12px;
+      }
+      .hero-eyebrow::before, .hero-eyebrow::after {
+        content: ''; flex: 1; max-width: 60px; height: 1px; background: var(--border);
+      }
+      .hero-title {
+        font-family: 'Fraunces', serif;
+        font-size: clamp(38px, 8vw, 72px);
+        font-weight: 300;
+        line-height: 0.95; letter-spacing: -0.035em;
+        margin-bottom: 20px;
+      }
+      .hero-title em {
+        font-family: 'Instrument Serif', serif;
+        font-style: italic; font-weight: 400;
+        color: var(--moss); font-size: 1.05em;
+      }
+      .hero-sub {
+        font-size: clamp(15px, 2.2vw, 17px);
+        color: var(--ink-soft); line-height: 1.55;
+        max-width: 560px; margin-bottom: 28px;
+      }
+      .search-wrap {
+        position: relative; max-width: 560px;
+        background: var(--paper);
+        border: 1.5px solid var(--border);
+        border-radius: 2px;
+        display: flex; align-items: center;
+        padding: 0 16px; gap: 10px;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      .search-wrap:focus-within {
+        border-color: var(--moss);
+        box-shadow: 0 0 0 3px rgba(30,58,39,0.1);
+      }
+      .search-wrap > svg { color: var(--ink-faint); flex-shrink: 0; }
+      .search-input {
+        flex: 1; padding: 16px 0;
+        background: transparent; border: none; outline: none;
+        font-family: inherit; font-size: 16px; color: var(--ink);
+      }
+      .search-input::placeholder { color: var(--ink-faint); }
+      .search-clear {
+        width: 28px; height: 28px; border-radius: 99px;
+        display: flex; align-items: center; justify-content: center;
+        color: var(--ink-faint);
+      }
+
+      .section-label { margin-bottom: 20px; }
+      .section-kicker {
+        display: flex; align-items: center; gap: 10px;
+        font-size: 11px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.22em;
+        font-weight: 600; margin-bottom: 8px;
+      }
+      .section-rule { width: 24px; height: 1px; background: var(--moss); }
+      .section-title {
+        font-family: 'Fraunces', serif;
+        font-size: clamp(24px, 4vw, 32px);
+        font-weight: 400; letter-spacing: -0.02em;
+        line-height: 1.15;
+      }
+      .section-blurb {
+        font-size: 14px; color: var(--ink-soft);
+        margin-top: 4px; font-style: italic;
+        font-family: 'Instrument Serif', serif;
+      }
+
+      .featured { margin-bottom: 56px; }
+      .featured-card {
+        display: grid; grid-template-columns: 1.1fr 1fr;
+        background: var(--paper); border: 1px solid var(--border);
+        overflow: hidden; cursor: pointer;
+        box-shadow: var(--shadow-soft);
+        transition: transform 0.25s, box-shadow 0.25s;
+      }
+      @media (hover: hover) { .featured-card:hover { box-shadow: var(--shadow-lift); transform: translateY(-2px); } }
+      @media (max-width: 720px) { .featured-card { grid-template-columns: 1fr; } }
+      .featured-image { height: 400px; position: relative; }
+      @media (max-width: 720px) { .featured-image { height: 260px; } }
+      .featured-body { padding: 36px; display: flex; flex-direction: column; justify-content: center; }
+      @media (max-width: 600px) { .featured-body { padding: 24px; } }
+      .featured-kicker {
+        font-size: 11px; color: var(--gold);
+        text-transform: uppercase; letter-spacing: 0.24em;
+        font-weight: 600; margin-bottom: 14px;
+      }
+      .featured-title {
+        font-family: 'Fraunces', serif;
+        font-size: clamp(28px, 5vw, 44px);
+        font-weight: 400; letter-spacing: -0.025em;
+        line-height: 1.05; margin-bottom: 6px;
+      }
+      .featured-sci {
+        font-family: 'Instrument Serif', serif;
+        font-size: 15px; font-style: italic;
+        color: var(--ink-faint); margin-bottom: 18px;
+      }
+      .featured-desc {
+        font-size: 15px; color: var(--ink-soft);
+        line-height: 1.65; margin-bottom: 20px;
+        display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+      }
+      .featured-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+      .featured-meta span {
+        font-size: 11px; color: var(--ink-soft);
+        padding: 4px 10px; background: var(--cream);
+        border: 1px solid var(--border); border-radius: 2px;
+        font-weight: 500;
+      }
+      .featured-meta .pet-safe { color: var(--moss); border-color: var(--moss-light); }
+      .featured-meta .rare-tag { color: var(--rust); border-color: var(--rust); }
+      .featured-cta {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 13px; font-weight: 600; color: var(--moss);
+        text-transform: uppercase; letter-spacing: 0.12em;
+        border-bottom: 1px solid var(--moss);
+        padding-bottom: 4px; align-self: flex-start;
+      }
+
+      .mood-chips {
+        display: flex; gap: 8px; flex-wrap: wrap;
+        margin-bottom: 48px; padding-bottom: 28px;
+        border-bottom: 1px solid var(--border-soft);
+      }
+      .chip {
+        padding: 8px 16px;
+        border: 1px solid var(--border);
+        background: var(--paper);
+        color: var(--ink-soft);
+        font-size: 13px; font-weight: 500;
+        border-radius: 99px;
+        transition: background 0.15s, color 0.15s, border-color 0.15s;
+      }
       @media (hover: hover) {
-        .lift { transition: transform 0.18s, box-shadow 0.18s; }
-        .lift:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg) !important; }
-        .btn:hover { opacity: 0.85; }
+        .chip:hover { background: var(--moss); color: var(--cream); border-color: var(--moss); }
       }
-      .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+
+      .shelf { margin-bottom: 48px; animation: fadeUp 0.5s ease backwards; }
+      .shelf-scroll {
+        display: flex; gap: 16px;
+        overflow-x: auto; scroll-snap-type: x mandatory;
+        padding: 4px 20px 16px;
+        margin: 0 -20px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .shelf-scroll::-webkit-scrollbar { display: none; }
+
+      .mini-card {
+        flex: 0 0 auto; width: 200px;
+        scroll-snap-align: start;
+        background: var(--paper);
+        border: 1px solid var(--border);
+        overflow: hidden; cursor: pointer; text-align: left;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+      @media (hover: hover) {
+        .mini-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); }
+      }
+      .mini-image { position: relative; }
+      .mini-heart {
+        position: absolute; top: 8px; right: 8px;
+        width: 28px; height: 28px; border-radius: 99px;
+        background: rgba(244,237,224,0.94);
+        display: flex; align-items: center; justify-content: center;
+        backdrop-filter: blur(4px);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      }
+      .mini-body { padding: 12px 14px 14px; }
+      .mini-name {
+        font-family: 'Fraunces', serif;
+        font-size: 16px; font-weight: 500; line-height: 1.2;
+        margin-bottom: 2px; letter-spacing: -0.01em;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .mini-sci {
+        font-family: 'Instrument Serif', serif;
+        font-size: 12px; font-style: italic;
+        color: var(--ink-faint);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+
+      .full-catalog { margin-bottom: 40px; }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 20px;
+      }
+      @media (max-width: 520px) {
+        .grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+      }
+
+      .card {
+        background: var(--paper); border: 1px solid var(--border);
+        overflow: hidden; cursor: pointer; position: relative;
+        transition: transform 0.22s, box-shadow 0.22s;
+        display: flex; flex-direction: column;
+      }
+      .card-fade { animation: fadeUp 0.4s ease backwards; }
+      @media (hover: hover) { .card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); } }
+      .card-image-wrap { position: relative; }
+      .card-actions {
+        position: absolute; top: 10px; right: 10px;
+        display: flex; gap: 6px;
+      }
+      .card-btn, .card-btn-single {
+        width: 34px; height: 34px; border-radius: 99px;
+        display: flex; align-items: center; justify-content: center;
+        backdrop-filter: blur(6px); box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      }
+      .card-btn-single { position: absolute; top: 10px; right: 10px; }
+      .card-rare {
+        position: absolute; top: 10px; left: 10px;
+        background: var(--rust); color: var(--cream);
+        font-size: 10px; font-weight: 600;
+        letter-spacing: 0.08em; text-transform: uppercase;
+        padding: 4px 10px; border-radius: 2px;
+        display: flex; align-items: center; gap: 4px;
+        box-shadow: 0 2px 6px rgba(184,70,64,0.3);
+      }
+      .card-body { padding: 14px 16px 16px; flex: 1; display: flex; flex-direction: column; }
+      .card-name {
+        font-family: 'Fraunces', serif;
+        font-size: 20px; font-weight: 500; line-height: 1.15;
+        margin-bottom: 3px; letter-spacing: -0.015em;
+      }
+      @media (max-width: 520px) { .card-name { font-size: 17px; } }
+      .card-sci {
+        font-family: 'Instrument Serif', serif;
+        font-size: 13px; font-style: italic;
+        color: var(--ink-faint); margin-bottom: 10px;
+      }
+      .card-desc {
+        font-size: 13px; color: var(--ink-soft);
+        line-height: 1.55; margin-bottom: 12px; flex: 1;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      }
+      @media (max-width: 520px) { .card-desc { display: none; } }
+      .card-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+      .card-meta-item {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-size: 11px; color: var(--ink-soft);
+        padding: 3px 9px; border-radius: 99px;
+        background: var(--cream); border: 1px solid var(--border-soft);
+      }
+      .card-footer {
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        padding-top: 10px; border-top: 1px solid var(--border-soft);
+      }
+      .difficulty-label {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: 11px; font-weight: 600; color: var(--ink-soft);
+        text-transform: uppercase; letter-spacing: 0.06em;
+      }
+      .difficulty-dot { width: 6px; height: 6px; border-radius: 99px; display: inline-block; }
+      .difficulty-dot[data-level="Very Easy"] { background: #7ec850; }
+      .difficulty-dot[data-level="Easy"] { background: #9fd26a; }
+      .difficulty-dot[data-level="Moderate"] { background: #d4a82e; }
+      .difficulty-dot[data-level="Hard"] { background: #c1392b; }
+      .difficulty-dot[data-level="Expert"] { background: #3a3a5a; }
+      .pet-safe-pill {
+        font-size: 10px; color: var(--moss);
+        background: var(--moss-bg);
+        padding: 3px 8px; border-radius: 99px;
+        font-weight: 600; letter-spacing: 0.04em;
+      }
+
+      .detail-toolbar {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 20px;
+      }
+      .toolbar-btn {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 13px; font-weight: 500;
+        color: var(--ink-soft);
+        padding: 8px 14px;
+        border: 1px solid var(--border); border-radius: 2px;
+      }
+      .toolbar-btn:hover { background: var(--paper); }
+
+      .detail-hero {
+        position: relative; min-height: 460px;
+        margin-bottom: 28px; overflow: hidden;
+        background: var(--moss); color: var(--cream);
+      }
+      @media (max-width: 600px) { .detail-hero { min-height: 360px; } }
+      .detail-hero-image { position: absolute; inset: 0; }
+      .detail-hero-fade {
+        position: absolute; inset: 0;
+        background: linear-gradient(to bottom, rgba(30,58,39,0.4) 0%, rgba(30,58,39,0.92) 100%);
+      }
+      .detail-hero-content {
+        position: relative; z-index: 1;
+        padding: 40px; display: flex; flex-direction: column;
+        justify-content: flex-end; min-height: 460px;
+      }
+      @media (max-width: 600px) {
+        .detail-hero-content { padding: 28px 24px 24px; min-height: 360px; }
+      }
+      .detail-kicker {
+        font-size: 11px; color: rgba(244,237,224,0.7);
+        text-transform: uppercase; letter-spacing: 0.24em;
+        font-weight: 600; margin-bottom: 14px;
+      }
+      .detail-title {
+        font-family: 'Fraunces', serif;
+        font-size: clamp(36px, 7vw, 64px);
+        font-weight: 400; letter-spacing: -0.03em;
+        line-height: 1; margin-bottom: 10px;
+        color: var(--cream);
+      }
+      .detail-sci {
+        font-family: 'Instrument Serif', serif;
+        font-style: italic; font-size: clamp(16px, 2.4vw, 20px);
+        color: rgba(244,237,224,0.6); margin-bottom: 20px;
+      }
+      .detail-tags { display: flex; gap: 7px; flex-wrap: wrap; }
+      .chip-dark {
+        background: rgba(244,237,224,0.15);
+        border: 1px solid rgba(244,237,224,0.25);
+        color: var(--cream);
+        padding: 5px 12px; border-radius: 99px;
+        font-size: 12px; font-weight: 500;
+        backdrop-filter: blur(8px);
+      }
+      .chip-dark.pet { background: rgba(82,183,136,0.25); border-color: rgba(82,183,136,0.5); }
+      .chip-dark.tox { background: rgba(193,57,43,0.25); border-color: rgba(193,57,43,0.5); }
+      .chip-dark.rare { background: rgba(244,237,224,0.2); border-color: var(--gold); color: var(--gold); }
+
+      .detail-actions {
+        display: grid; grid-template-columns: repeat(3, 1fr);
+        gap: 8px; margin-bottom: 28px;
+      }
+      .action-btn {
+        padding: 14px; font-size: 13px; font-weight: 600;
+        color: var(--ink-soft);
+        background: var(--paper); border: 1px solid var(--border);
+        border-radius: 2px;
+        display: flex; align-items: center; justify-content: center; gap: 7px;
+        transition: all 0.15s;
+      }
+      .action-btn.active { color: var(--moss); background: var(--moss-bg); border-color: var(--moss); }
+      .action-btn.active.wished { color: var(--rust); background: var(--rust-bg); border-color: var(--rust); }
       @media (max-width: 500px) {
-        .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
-        .card .wm { font-size: 15px !important; }
+        .action-btn span { font-size: 12px; }
       }
-      .pill { padding: 6px 13px; border-radius: 99px; font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.6); cursor: pointer; border: none; background: transparent; transition: background 0.15s; }
-      .pill:hover { background: rgba(255,255,255,0.1); color: #fff; }
-      .pill.on { background: rgba(255,255,255,0.18); color: #fff; }
-      .nav-desktop { display: flex; }
-      .nav-mobile { display: none; }
-      @media (max-width: 700px) {
-        .nav-desktop { display: none !important; }
-        .nav-mobile { display: flex !important; }
+
+      .stat-strip {
+        display: grid; grid-template-columns: repeat(3, 1fr);
+        background: var(--paper); border: 1px solid var(--border);
+        margin-bottom: 36px;
       }
-      .hero-bg { background: linear-gradient(135deg, #0f2318 0%, #1a3a28 40%, #152e1f 100%); }
-      .tabs { display: flex; overflow-x: auto; -ms-overflow-style: none; scrollbar-width: none; }
+      .stat {
+        padding: 18px 16px;
+        display: flex; align-items: center; gap: 12px;
+        border-right: 1px solid var(--border-soft);
+      }
+      .stat:last-child { border-right: none; }
+      .stat-icon { color: var(--moss); flex-shrink: 0; }
+      .stat-label {
+        font-size: 10px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.18em;
+        font-weight: 600; margin-bottom: 3px;
+      }
+      .stat-value {
+        font-family: 'Fraunces', serif;
+        font-size: 16px; font-weight: 500; line-height: 1.1;
+      }
+      @media (max-width: 600px) {
+        .stat { padding: 12px 10px; gap: 8px; flex-direction: column; text-align: center; }
+        .stat-label { letter-spacing: 0.1em; font-size: 9px; }
+        .stat-value { font-size: 13px; }
+      }
+
+      .detail-story {
+        max-width: 680px; margin: 0 auto 40px;
+        position: relative;
+      }
+      .drop-cap {
+        font-family: 'Fraunces', serif; font-weight: 400;
+        font-size: 72px; line-height: 0.85;
+        float: left; margin: 4px 14px 0 0;
+        color: var(--moss);
+      }
+      .detail-story p {
+        font-family: 'Instrument Serif', serif;
+        font-size: 18px; line-height: 1.65;
+        color: var(--ink);
+      }
+      .fun-fact {
+        margin-top: 28px; padding: 18px 22px;
+        background: var(--moss-bg);
+        border-left: 3px solid var(--moss);
+        clear: both;
+      }
+      .fun-fact-label {
+        font-size: 11px; color: var(--moss);
+        text-transform: uppercase; letter-spacing: 0.18em;
+        font-weight: 600; margin-bottom: 6px;
+      }
+      .fun-fact p {
+        font-size: 15px !important; font-family: inherit !important;
+        color: var(--ink-soft) !important; line-height: 1.6;
+      }
+
+      .tabs {
+        display: flex; overflow-x: auto;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 24px; scrollbar-width: none;
+      }
       .tabs::-webkit-scrollbar { display: none; }
-      .tab { padding: 10px 16px; font-size: 14px; font-weight: 500; color: var(--ink3); cursor: pointer; background: transparent; border: none; border-bottom: 2px solid transparent; white-space: nowrap; font-family: inherit; transition: color 0.15s, border-color 0.15s; }
-      .tab.on { color: var(--accent); border-bottom-color: var(--accent); }
-      .wm { font-family: 'Fraunces', serif; }
-      input, select, textarea { font-family: inherit; font-size: 16px; color: var(--ink); }
-      input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-      select { cursor: pointer; }
-      .shim { background: linear-gradient(90deg, #ece8df 0%, #f5f1ea 50%, #ece8df 100%); background-size: 200% 100%; animation: shim 1.3s ease infinite; }
-      .fade { animation: fadeUp 0.25s ease; }
-      .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
-      @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-      @keyframes shim { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-      @keyframes slideUp { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
-      @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+      .tab {
+        padding: 12px 18px;
+        font-size: 13px; font-weight: 600;
+        color: var(--ink-faint);
+        border-bottom: 2px solid transparent;
+        white-space: nowrap;
+        text-transform: uppercase; letter-spacing: 0.1em;
+        transition: color 0.15s, border-color 0.15s;
+      }
+      .tab.on { color: var(--moss); border-bottom-color: var(--moss); }
+
+      .care-wrap { display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
+      .care-section {
+        background: var(--paper); border: 1px solid var(--border);
+        padding: 22px 24px;
+      }
+      .care-title {
+        font-family: 'Fraunces', serif;
+        font-size: 19px; font-weight: 500;
+        margin-bottom: 10px;
+        display: flex; align-items: center; gap: 10px;
+      }
+      .care-emoji { font-size: 22px; }
+      .care-body { font-size: 15px; color: var(--ink-soft); line-height: 1.7; }
+      .profile-list { display: flex; flex-direction: column; gap: 10px; }
+      .profile-row {
+        display: flex; gap: 18px;
+        padding-bottom: 10px;
+        border-bottom: 1px dotted var(--border);
+      }
+      .profile-row:last-child { border: none; padding: 0; }
+      .profile-row dt {
+        font-size: 12px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.1em;
+        font-weight: 600; min-width: 110px;
+      }
+      .profile-row dd { font-size: 14px; color: var(--ink); line-height: 1.5; flex: 1; }
+
+      .variety-list { display: flex; flex-direction: column; gap: 12px; }
+      .variety-card {
+        background: var(--paper); border: 1px solid var(--border);
+        padding: 16px 18px;
+      }
+      .variety-head {
+        display: flex; justify-content: space-between; align-items: flex-start;
+        gap: 12px; margin-bottom: 10px;
+      }
+      .variety-name {
+        font-family: 'Fraunces', serif;
+        font-size: 17px; font-weight: 500; margin-bottom: 3px;
+      }
+      .variety-rarity {
+        font-size: 11px; color: var(--gold);
+        text-transform: uppercase; letter-spacing: 0.14em;
+        font-weight: 600;
+      }
+      .variety-price-box { text-align: right; flex-shrink: 0; }
+      .variety-price {
+        font-family: 'Fraunces', serif;
+        font-size: 24px; font-weight: 500; color: var(--moss);
+        line-height: 1; letter-spacing: -0.02em;
+      }
+      .variety-price span { font-size: 14px; }
+      .variety-stock {
+        font-size: 11px; font-weight: 600;
+        text-transform: uppercase; letter-spacing: 0.1em;
+        margin-top: 4px;
+      }
+      .variety-stock.in { color: var(--moss); }
+      .variety-stock.out { color: var(--ink-faint); }
+      .variety-desc {
+        font-size: 14px; color: var(--ink-soft); line-height: 1.6;
+        margin-bottom: 10px;
+      }
+      .variety-links { display: flex; gap: 6px; flex-wrap: wrap; }
+      .variety-link {
+        padding: 5px 12px; border-radius: 2px;
+        background: var(--cream); border: 1px solid var(--border);
+        color: var(--moss); text-decoration: none;
+        font-size: 12px; font-weight: 500;
+        transition: background 0.15s;
+      }
+      .variety-link:hover { background: var(--moss-bg); }
+
+      .retailer-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 12px;
+      }
+      .retailer-card {
+        background: var(--paper); border: 1px solid var(--border);
+        padding: 14px 16px;
+      }
+      .retailer-name {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-family: 'Fraunces', serif;
+        font-size: 16px; font-weight: 500; color: var(--moss);
+        text-decoration: none; margin-bottom: 8px;
+      }
+      .retailer-row {
+        display: flex; justify-content: space-between;
+        padding: 6px 0; font-size: 13px;
+        border-top: 1px solid var(--border-soft);
+      }
+      .retailer-row span:first-child { color: var(--ink-soft); }
+      .retailer-row .price-in { color: var(--moss); font-weight: 600; }
+      .retailer-row .price-out { color: var(--ink-faint); }
+
+      .traits-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 8px;
+      }
+      .trait {
+        display: flex; align-items: center; gap: 10px;
+        padding: 12px 14px;
+        background: var(--paper); border: 1px solid var(--border);
+      }
+      .trait.on { background: var(--moss-bg); border-color: var(--moss-light); }
+      .trait-i { font-size: 18px; }
+      .trait-l { flex: 1; font-size: 13px; font-weight: 500; color: var(--ink-soft); }
+      .trait.on .trait-l { color: var(--moss); font-weight: 600; }
+      .trait-v { font-size: 13px; font-weight: 700; color: var(--ink-faint); }
+      .trait.on .trait-v { color: var(--moss); }
+
+      .journal { max-width: 680px; }
+      .journal-form {
+        background: var(--paper); border: 1px solid var(--border);
+        padding: 16px; margin-bottom: 20px;
+      }
+      .journal-form textarea {
+        width: 100%; padding: 10px 12px;
+        background: var(--cream); border: 1px solid var(--border-soft);
+        font-family: inherit; font-size: 14px; color: var(--ink);
+        resize: vertical; outline: none;
+        transition: border-color 0.15s;
+      }
+      .journal-form textarea:focus { border-color: var(--moss); }
+      .journal-form-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+      .journal-submit {
+        padding: 8px 16px;
+        background: var(--moss); color: var(--cream);
+        font-size: 13px; font-weight: 600;
+        display: inline-flex; align-items: center; gap: 6px;
+        border-radius: 2px;
+      }
+      .journal-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+      .journal-entries { display: flex; flex-direction: column; gap: 10px; }
+      .journal-entry {
+        background: var(--paper);
+        border-left: 3px solid var(--moss);
+        padding: 14px 18px;
+      }
+      .journal-date {
+        font-size: 11px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.14em;
+        font-weight: 600; margin-bottom: 6px;
+      }
+      .journal-entry p {
+        font-family: 'Instrument Serif', serif;
+        font-size: 16px; color: var(--ink); line-height: 1.55;
+      }
+      .journal-badge {
+        position: absolute; bottom: 10px; left: 10px;
+        background: rgba(30,58,39,0.9); color: var(--cream);
+        padding: 4px 8px; border-radius: 99px;
+        font-size: 11px; font-weight: 600;
+        display: flex; align-items: center; gap: 4px;
+        backdrop-filter: blur(4px);
+      }
+
+      .related {
+        margin-top: 48px; padding-top: 32px;
+        border-top: 1px solid var(--border-soft);
+      }
+
+      .compare-table-wrap {
+        overflow-x: auto;
+        background: var(--paper); border: 1px solid var(--border);
+      }
+      .compare-table { width: 100%; border-collapse: collapse; min-width: 500px; }
+      .compare-table th {
+        padding: 14px; text-align: left; vertical-align: top;
+        background: var(--cream);
+        border-bottom: 1px solid var(--border);
+        border-left: 1px solid var(--border-soft);
+        min-width: 160px;
+      }
+      .compare-table th:first-child { min-width: 120px; border-left: none; }
+      .compare-head-name {
+        font-family: 'Fraunces', serif;
+        font-size: 14px; font-weight: 500;
+        margin-top: 8px; line-height: 1.2;
+      }
+      .compare-remove {
+        font-size: 11px; color: var(--rust); font-weight: 500;
+        display: inline-flex; align-items: center; gap: 4px;
+        margin-top: 4px;
+      }
+      .compare-label {
+        font-size: 11px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.1em;
+        font-weight: 600;
+        padding: 12px 14px !important;
+        background: var(--paper);
+      }
+      .compare-table td {
+        padding: 12px 14px; font-size: 14px; color: var(--ink);
+        border-top: 1px solid var(--border-soft);
+        border-left: 1px solid var(--border-soft);
+      }
+
+      .page-wrap { max-width: 1200px; margin: 0 auto; padding-top: 20px; }
+      .stats-grid {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 10px; margin-bottom: 20px;
+      }
+      .stat-big {
+        background: var(--paper); border: 1px solid var(--border);
+        padding: 18px 16px; text-align: center;
+      }
+      .stat-num {
+        font-family: 'Fraunces', serif;
+        font-size: 36px; font-weight: 400; color: var(--moss);
+        line-height: 1; letter-spacing: -0.03em;
+      }
+      .stat-lbl {
+        font-size: 10px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.16em;
+        font-weight: 600; margin-top: 6px;
+      }
+      .collection-categories {
+        display: flex; gap: 6px; flex-wrap: wrap;
+        margin-bottom: 24px;
+      }
+      .category-tag {
+        font-size: 11px; color: var(--ink-soft);
+        padding: 4px 10px; border-radius: 99px;
+        background: var(--paper); border: 1px solid var(--border);
+        font-weight: 500;
+      }
+      .card-owned-since {
+        font-size: 11px; color: var(--ink-faint);
+        margin-top: 6px;
+      }
+
+      .quiz { max-width: 560px; margin: 40px auto 0; }
+      .quiz-progress {
+        display: flex; gap: 6px; justify-content: center;
+        margin-bottom: 36px;
+      }
+      .progress-dot {
+        width: 22px; height: 3px; border-radius: 99px;
+        background: var(--border);
+        transition: all 0.3s;
+      }
+      .progress-dot.active { background: var(--moss); width: 36px; }
+      .progress-dot.done { background: var(--moss-light); }
+      .quiz-header { text-align: center; margin-bottom: 32px; }
+      .quiz-emoji { font-size: 56px; margin-bottom: 14px; }
+      .quiz-q {
+        font-family: 'Fraunces', serif;
+        font-size: clamp(22px, 4vw, 30px);
+        font-weight: 400; letter-spacing: -0.02em; line-height: 1.2;
+        margin-bottom: 8px;
+      }
+      .quiz-step {
+        font-size: 11px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.2em; font-weight: 600;
+      }
+      .quiz-options { display: flex; flex-direction: column; gap: 10px; }
+      .quiz-option {
+        padding: 18px 22px;
+        background: var(--paper); border: 1px solid var(--border);
+        font-size: 15px; font-weight: 500; color: var(--ink);
+        display: flex; justify-content: space-between; align-items: center;
+        animation: fadeUp 0.4s ease backwards;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      .quiz-option:hover { background: var(--moss); color: var(--cream); border-color: var(--moss); }
+      .quiz-option svg { color: var(--ink-faint); transition: color 0.15s, transform 0.15s; }
+      .quiz-option:hover svg { color: var(--cream); transform: translateX(3px); }
+      .quiz-back {
+        margin-top: 18px; font-size: 13px; color: var(--ink-faint);
+        display: inline-flex; align-items: center; gap: 4px;
+      }
+
+      .quiz-results { max-width: 800px; margin: 0 auto; }
+      .results-list { display: flex; flex-direction: column; gap: 14px; margin-bottom: 28px; }
+      .result-card {
+        display: grid; grid-template-columns: 180px 1fr;
+        background: var(--paper); border: 1px solid var(--border);
+        cursor: pointer; overflow: hidden;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+      .result-card.best { border: 2px solid var(--moss); }
+      @media (max-width: 600px) { .result-card { grid-template-columns: 120px 1fr; } }
+      @media (hover: hover) {
+        .result-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); }
+      }
+      .result-image { position: relative; }
+      .result-badge {
+        position: absolute; top: 10px; left: 10px;
+        background: var(--moss); color: var(--cream);
+        padding: 4px 10px;
+        font-size: 10px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.14em;
+      }
+      .result-badge.gray { background: var(--ink-faint); }
+      .result-body { padding: 20px 24px; }
+      @media (max-width: 600px) { .result-body { padding: 14px 16px; } }
+      .result-name {
+        font-family: 'Fraunces', serif;
+        font-size: clamp(18px, 3vw, 24px); font-weight: 500;
+        letter-spacing: -0.02em; line-height: 1.15;
+      }
+      .result-sci {
+        font-family: 'Instrument Serif', serif;
+        font-size: 13px; font-style: italic;
+        color: var(--ink-faint); margin: 3px 0 10px;
+      }
+      .result-desc {
+        font-size: 13px; color: var(--ink-soft); line-height: 1.55;
+        margin-bottom: 10px;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      }
+      .result-cta {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: 12px; font-weight: 600; color: var(--moss);
+        text-transform: uppercase; letter-spacing: 0.12em;
+      }
+      .retake {
+        display: block; margin: 0 auto;
+        padding: 10px 20px;
+        border: 1px solid var(--border); background: var(--paper);
+        font-size: 13px; font-weight: 500; color: var(--ink-soft);
+        border-radius: 2px;
+      }
+
+      .search-results { margin-top: 8px; }
+      .search-head { margin-bottom: 20px; }
+      .search-query { font-style: italic; color: var(--ink-faint); font-weight: 300; }
+      .link-btn {
+        font-size: 13px; color: var(--moss); font-weight: 600;
+        margin-top: 6px; display: inline-block;
+      }
+
+      .empty {
+        text-align: center; padding: 40px 20px;
+        color: var(--ink-faint); font-size: 14px;
+      }
+      .empty-emoji { font-size: 42px; margin-bottom: 10px; }
+      .empty-page {
+        text-align: center; padding: 80px 20px;
+        max-width: 440px; margin: 0 auto;
+      }
+      .empty-emoji-big { font-size: 64px; margin-bottom: 20px; }
+      .empty-page h2 {
+        font-family: 'Fraunces', serif;
+        font-size: 28px; font-weight: 400; letter-spacing: -0.02em;
+        margin-bottom: 10px;
+      }
+      .empty-page p {
+        font-size: 15px; color: var(--ink-soft); line-height: 1.6;
+      }
+
+      .loading { text-align: center; padding: 120px 20px; color: var(--ink-faint); }
+      .spinner-big {
+        width: 32px; height: 32px; margin: 0 auto 20px;
+        border: 2px solid var(--border);
+        border-top-color: var(--moss);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      .spinner {
+        display: inline-block; vertical-align: middle; margin-right: 8px;
+        width: 14px; height: 14px;
+        border: 2px solid var(--border);
+        border-top-color: var(--moss);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+      }
+      .loading p {
+        font-family: 'Instrument Serif', serif;
+        font-style: italic; font-size: 16px;
+      }
+
+      .footer {
+        border-top: 1px solid var(--border);
+        margin-top: 60px;
+        padding: 40px 20px calc(28px + env(safe-area-inset-bottom));
+        text-align: center; background: var(--paper);
+      }
+      .footer-mark {
+        font-family: 'Fraunces', serif;
+        font-size: 28px; font-weight: 500;
+        letter-spacing: -0.02em; margin-bottom: 6px;
+      }
+      .footer-tag {
+        font-size: 11px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.24em;
+        font-weight: 600; margin-bottom: 14px;
+      }
+      .footer-meta {
+        font-size: 12px; color: var(--ink-faint);
+        font-family: 'Instrument Serif', serif;
+        font-style: italic;
+      }
+
+      .fade { animation: fadeUp 0.35s ease; }
+      @keyframes fadeUp {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes slideUp {
+        from { opacity: 0; transform: translate(-50%, 16px); }
+        to { opacity: 1; transform: translate(-50%, 0); }
+      }
       @keyframes spin { to { transform: rotate(360deg); } }
+
+      input, select, textarea { font-family: inherit; font-size: 16px; }
+      input:focus, select:focus, textarea:focus { outline: none; }
     `}</style>
   );
 }
