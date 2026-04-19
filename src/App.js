@@ -251,7 +251,6 @@ export default function Cultivar() {
   const [compare, setCompare] = usePersisted("cultivar:compare", []);
   const [myCollection, setMyCollection] = usePersisted("cultivar:collection", []);
   const [journal, setJournal] = usePersisted("cultivar:journal", {});
-  const [plantOfDay, setPlantOfDay] = usePersisted("cultivar:pod", null);
 
   const [searchRaw, setSearchRaw] = useState("");
   const search = useDebounced(searchRaw, 180);
@@ -269,12 +268,6 @@ export default function Cultivar() {
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
       setPlants(data);
-      if (data.length) {
-        const day = Math.floor(Date.now() / 86400000);
-        if (!plantOfDay || plantOfDay.day !== day) {
-          setPlantOfDay({ day, plant: data[day % data.length] });
-        }
-      }
       const r = getRoute();
       if (r.view === "detail" && r.slug) {
         const f = data.find(x => x.slug === r.slug);
@@ -290,6 +283,11 @@ export default function Cultivar() {
 
   useEffect(() => { load(); }, [load]);
 
+  // One-time cleanup: remove deprecated plant-of-day cache from older versions
+  useEffect(() => {
+    try { localStorage.removeItem("cultivar:pod"); } catch {}
+  }, []);
+
   useEffect(() => {
     const onPop = () => {
       const r = getRoute();
@@ -303,6 +301,17 @@ export default function Cultivar() {
   }, [plants]);
 
   const filtered = useMemo(() => smartFilter(plants, search), [plants, search]);
+
+  // Plant of the Day: computed fresh, deterministic by calendar day (UTC)
+  const plantOfDay = useMemo(() => {
+    if (!plants.length) return null;
+    const now = new Date();
+    const dayKey = now.getFullYear() * 1000 + now.getMonth() * 50 + now.getDate();
+    // Simple hash to spread across catalog
+    let seed = dayKey;
+    seed = ((seed * 9301) + 49297) % 233280;
+    return plants[seed % plants.length];
+  }, [plants]);
 
   const toggleWish = useCallback((p) => {
     setWishlist(w => {
@@ -385,7 +394,7 @@ export default function Cultivar() {
           <Catalog
             loading={loading} plants={plants} filtered={filtered}
             searchRaw={searchRaw} setSearchRaw={setSearchRaw}
-            plantOfDay={plantOfDay?.plant}
+            plantOfDay={plantOfDay}
             onOpen={openPlant} onWish={toggleWish} onCmp={toggleCmp}
             isWished={isWished} isCmp={isCmp}
           />
@@ -484,6 +493,17 @@ function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDa
   const isSearching = !!searchRaw.trim();
   const shelves = useMemo(() => {
     if (!plants.length) return [];
+    // Stable seeded shuffle — same order each render, different per shelf
+    const shuffle = (arr, seed) => {
+      const a = [...arr];
+      let s = seed;
+      for (let i = a.length - 1; i > 0; i--) {
+        s = (s * 9301 + 49297) % 233280;
+        const j = Math.floor((s / 233280) * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    };
     return [
       { title: "Impossible to Kill", blurb: "For the serial plant-slayers.", f: p => ["Very Easy","Easy"].includes(p.difficulty) && (p.drought_tolerant || p.low_light) },
       { title: "Dark & Moody", blurb: "Thrive in gloom. Loft apartment energy.", f: p => p.low_light && !p.rare },
@@ -494,7 +514,7 @@ function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDa
       { title: "For the Collector", blurb: "Rare finds that turn heads.", f: p => p.rare },
       { title: "Fragrant Specimens", blurb: "Plants that smell as good as they look.", f: p => p.fragrant },
       { title: "Edible Garden", blurb: "Grow what you eat.", f: p => p.edible },
-    ].map(s => ({ ...s, items: plants.filter(s.f).slice(0, 10) })).filter(s => s.items.length >= 3);
+    ].map((s, i) => ({ ...s, items: shuffle(plants.filter(s.f), i * 1000 + 17).slice(0, 10) })).filter(s => s.items.length >= 3);
   }, [plants]);
 
   return (
