@@ -262,7 +262,7 @@ export default function Cultivar() {
       setError(null);
       const fields = "id,common_name,scientific_name,emoji,category,description,sunlight,watering,difficulty,toxicity,slug,tags,rare,low_light,air_purifying,drought_tolerant,flowering,fragrant,outdoor_ok,fast_growing,edible,image_url";
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/plants?select=${fields}&published=eq.true&order=common_name.asc`,
+        `${SUPABASE_URL}/rest/v1/plants?select=${fields}&published=eq.true&order=common_name.asc&limit=5000`,
         { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
       );
       if (!res.ok) throw new Error(`${res.status}`);
@@ -853,18 +853,24 @@ function Detail({ plant, plants, onBack, onOpen, onWish, onCmp, onAddCollection,
 
 function CareTab({ plant }) {
   const sections = [
+    { k: "long_description", e: "📖", t: "About This Plant" },
     { k: "care_notes", e: "💧", t: "Watering & General Care" },
     { k: "soil", e: "🪴", t: "Soil & Potting" },
     { k: "fertilizer", e: "🌿", t: "Feeding" },
     { k: "propagation", e: "✂️", t: "Propagation" },
     { k: "temperature", e: "🌡️", t: "Temperature & Humidity" },
     { k: "common_problems", e: "🔍", t: "Common Problems" },
+    { k: "fun_fact", e: "✨", t: "Did You Know?" },
   ].filter(s => plant[s.k]);
   const profile = [
     ["Native to", plant.native_region],
     ["Blooms", plant.bloom_season],
     ["Mature height", plant.mature_height],
     ["Pairs with", plant.companion_plants],
+    ["Toxicity", plant.toxicity],
+    ["Climate zone", plant.climate_zone],
+    ["Growth rate", plant.growth_rate],
+    ["Humidity", plant.humidity],
   ].filter(([, v]) => v);
   if (!sections.length && !profile.length) {
     return <div className="empty"><p>Care guide coming soon for this specimen.</p></div>;
