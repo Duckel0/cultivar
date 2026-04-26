@@ -261,17 +261,33 @@ export default function Cultivar() {
       setLoading(true);
       setError(null);
       const fields = "id,common_name,scientific_name,emoji,category,description,sunlight,watering,difficulty,toxicity,slug,tags,rare,low_light,air_purifying,drought_tolerant,flowering,fragrant,outdoor_ok,fast_growing,edible,image_url";
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/plants?select=${fields}&published=eq.true&order=common_name.asc`,
-        { headers: { 
-          apikey: SUPABASE_KEY, 
-          Authorization: `Bearer ${SUPABASE_KEY}`,
-          "Range-Unit": "items",
-          "Range": "0-9999",
-        } }
-      );
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data = await res.json();
+      // Paginate to bypass Supabase's 1000-row default cap.
+      // Each request uses Range header for a 1000-row page; loop until empty.
+      const PAGE = 1000;
+      let allPlants = [];
+      let pageNum = 0;
+      while (true) {
+        const from = pageNum * PAGE;
+        const to = from + PAGE - 1;
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/plants?select=${fields}&published=eq.true&order=common_name.asc`,
+          { headers: {
+            apikey: SUPABASE_KEY,
+            Authorization: `Bearer ${SUPABASE_KEY}`,
+            "Range-Unit": "items",
+            "Range": `${from}-${to}`,
+            "Prefer": "count=exact",
+          } }
+        );
+        if (!res.ok && res.status !== 206) throw new Error(`${res.status}`);
+        const pageData = await res.json();
+        if (!Array.isArray(pageData) || pageData.length === 0) break;
+        allPlants = allPlants.concat(pageData);
+        if (pageData.length < PAGE) break;
+        pageNum++;
+        if (pageNum > 20) break; // safety: stop at 20K plants
+      }
+      const data = allPlants;
       setPlants(data);
       const r = getRoute();
       if (r.view === "detail" && r.slug) {
