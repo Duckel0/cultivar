@@ -597,10 +597,10 @@ function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDa
 // CATEGORY BROWSER — replaces the giant alphabetical dump
 // ============================================================
 function CategoryBrowser({ plants, onOpen, onWish, onCmp, isWished, isCmp }) {
-  const [activeGroup, setActiveGroup] = React.useState(null);
+  const [activeGroup, setActiveGroup] = useState(null);
 
   // Define groupings — slices the catalog by type, vibe, and difficulty
-  const groups = React.useMemo(() => {
+  const groups = useMemo(() => {
     const byType = [
       { id: "trees", label: "Trees", emoji: "🌳", f: p => p.category === "Tree" },
       { id: "aroids", label: "Aroids", emoji: "🌿", f: p => p.category === "Aroid" },
@@ -685,11 +685,11 @@ function CategoryBrowser({ plants, onOpen, onWish, onCmp, isWished, isCmp }) {
 }
 
 function CategoryView({ group, onBack, onOpen, onWish, onCmp, isWished, isCmp }) {
-  const [visible, setVisible] = React.useState(30);
+  const [visible, setVisible] = useState(30);
   const items = group.items;
   const hasMore = visible < items.length;
 
-  React.useEffect(() => {
+  useEffect(() => {
     const onScroll = () => {
       if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 600 && hasMore) {
         setVisible(v => Math.min(v + 30, items.length));
@@ -1073,7 +1073,7 @@ function VarietiesTab({ loading, varieties, plantName }) {
 
 function LocationsTab({ retailers, varieties, plantName, plant }) {
   // Build smart retailer list based on plant category/traits
-  const smartRetailers = React.useMemo(() => {
+  const smartRetailers = useMemo(() => {
     const cat = (plant?.category || "").toLowerCase();
     const tags = (plant?.tags || []).join(",").toLowerCase();
     const isRare = plant?.rare;
