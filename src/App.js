@@ -262,8 +262,13 @@ export default function Cultivar() {
       setError(null);
       const fields = "id,common_name,scientific_name,emoji,category,description,sunlight,watering,difficulty,toxicity,slug,tags,rare,low_light,air_purifying,drought_tolerant,flowering,fragrant,outdoor_ok,fast_growing,edible,image_url";
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/plants?select=${fields}&published=eq.true&order=common_name.asc&limit=5000`,
-        { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+        `${SUPABASE_URL}/rest/v1/plants?select=${fields}&published=eq.true&order=common_name.asc`,
+        { headers: { 
+          apikey: SUPABASE_KEY, 
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Range-Unit": "items",
+          "Range": "0-9999",
+        } }
       );
       if (!res.ok) throw new Error(`${res.status}`);
       const data = await res.json();
@@ -581,30 +586,157 @@ function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDa
             ))}
           </section>
 
-          {shelves.map((shelf, i) => (
-            <section key={shelf.title} className="shelf" style={{ animationDelay: `${i * 60}ms` }}>
-              <SectionLabel kicker={`Shelf № ${String(i + 1).padStart(2, "0")}`} title={shelf.title} blurb={shelf.blurb} />
-              <div className="shelf-scroll">
-                {shelf.items.map(p => <MiniCard key={p.id} plant={p} onOpen={onOpen} onWish={onWish} wished={isWished(p.id)} />)}
-              </div>
-            </section>
-          ))}
-
-          <section className="full-catalog">
-            <SectionLabel kicker="The Archive" title="Every Species" blurb={`All ${plants.length.toLocaleString()} plants, alphabetically.`} />
-            <div className="grid">
-              {plants.map((p, i) => (
-                <PlantCard key={p.id} plant={p}
-                  onOpen={onOpen} onWish={onWish} onCmp={onCmp}
-                  wished={isWished(p.id)} comped={isCmp(p.id)}
-                  delay={Math.min(i, 18) * 25} />
-              ))}
-            </div>
-          </section>
+          <CategoryBrowser plants={plants} onOpen={onOpen} onWish={onWish} onCmp={onCmp} isWished={isWished} isCmp={isCmp} />
         </>
       )}
     </div>
   );
+}
+
+// ============================================================
+// CATEGORY BROWSER — replaces the giant alphabetical dump
+// ============================================================
+function CategoryBrowser({ plants, onOpen, onWish, onCmp, isWished, isCmp }) {
+  const [activeGroup, setActiveGroup] = React.useState(null);
+
+  // Define groupings — slices the catalog by type, vibe, and difficulty
+  const groups = React.useMemo(() => {
+    const byType = [
+      { id: "trees", label: "Trees", emoji: "🌳", f: p => p.category === "Tree" },
+      { id: "aroids", label: "Aroids", emoji: "🌿", f: p => p.category === "Aroid" },
+      { id: "succulents", label: "Succulents & Cacti", emoji: "🌵", f: p => p.category === "Succulent" || p.category === "Cactus" || /succulent|cactus/i.test((p.tags||[]).join(",")) },
+      { id: "orchids", label: "Orchids", emoji: "🌸", f: p => p.category === "Orchid" },
+      { id: "ferns", label: "Ferns", emoji: "🌱", f: p => p.category === "Fern" },
+      { id: "carnivorous", label: "Carnivorous", emoji: "🪤", f: p => p.category === "Carnivorous" },
+      { id: "begonias", label: "Begonias", emoji: "🍃", f: p => p.category === "Begonia" || /begonia/i.test(p.scientific_name || "") },
+      { id: "bonsai", label: "Bonsai", emoji: "🎋", f: p => p.category === "Bonsai" || (p.tags||[]).includes("bonsai") },
+      { id: "perennials", label: "Outdoor Perennials", emoji: "🌷", f: p => p.category === "Perennial" },
+      { id: "houseplants", label: "Houseplants", emoji: "🏡", f: p => p.category === "Houseplant" },
+      { id: "prayer", label: "Prayer Plants", emoji: "🙏", f: p => /calathea|goeppertia|maranta|stromanthe|ctenanthe/i.test(p.scientific_name || "") },
+    ];
+    const byVibe = [
+      { id: "rare", label: "Rare & Collector", emoji: "💎", f: p => p.rare },
+      { id: "petsafe", label: "Pet Safe", emoji: "🐾", f: p => p.toxicity === "Pet Safe" },
+      { id: "lowlight", label: "Low Light Champions", emoji: "🌑", f: p => p.low_light },
+      { id: "drought", label: "Drought Tolerant", emoji: "☀️", f: p => p.drought_tolerant },
+      { id: "fragrant", label: "Fragrant", emoji: "🌷", f: p => p.fragrant },
+      { id: "flowering", label: "Flowering", emoji: "🌺", f: p => p.flowering },
+      { id: "edible", label: "Edible", emoji: "🍽️", f: p => p.edible },
+      { id: "outdoor", label: "Outdoor Friendly", emoji: "🌿", f: p => p.outdoor_ok },
+      { id: "purifying", label: "Air Purifying", emoji: "🌬️", f: p => p.air_purifying },
+      { id: "fast", label: "Fast Growing", emoji: "⚡", f: p => p.fast_growing },
+    ];
+    const byLevel = [
+      { id: "easy", label: "Beginner Friendly", emoji: "🌱", f: p => ["Very Easy","Easy"].includes(p.difficulty) },
+      { id: "intermediate", label: "Intermediate", emoji: "🌿", f: p => p.difficulty === "Moderate" },
+      { id: "advanced", label: "Advanced", emoji: "🏔️", f: p => p.difficulty === "Hard" },
+    ];
+    const fill = arr => arr.map(g => ({ ...g, items: plants.filter(g.f), count: plants.filter(g.f).length })).filter(g => g.count >= 3);
+    return { type: fill(byType), vibe: fill(byVibe), level: fill(byLevel) };
+  }, [plants]);
+
+  const active = activeGroup ? [...groups.type, ...groups.vibe, ...groups.level].find(g => g.id === activeGroup) : null;
+
+  if (active) {
+    return <CategoryView group={active} plants={plants} onBack={() => setActiveGroup(null)} onOpen={onOpen} onWish={onWish} onCmp={onCmp} isWished={isWished} isCmp={isCmp} />;
+  }
+
+  return (
+    <div className="category-hub fade">
+      <SectionLabel kicker="The Catalog" title="Browse by Category" blurb="Tap any category to explore. Search above works across everything." />
+      <div className="cat-section">
+        <h3 className="cat-section-title">By Type</h3>
+        <div className="cat-grid">
+          {groups.type.map(g => (
+            <button key={g.id} className="cat-card" onClick={() => setActiveGroup(g.id)}>
+              <span className="cat-emoji">{g.emoji}</span>
+              <span className="cat-label">{g.label}</span>
+              <span className="cat-count">{g.count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="cat-section">
+        <h3 className="cat-section-title">By Vibe</h3>
+        <div className="cat-grid">
+          {groups.vibe.map(g => (
+            <button key={g.id} className="cat-card" onClick={() => setActiveGroup(g.id)}>
+              <span className="cat-emoji">{g.emoji}</span>
+              <span className="cat-label">{g.label}</span>
+              <span className="cat-count">{g.count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="cat-section">
+        <h3 className="cat-section-title">By Difficulty</h3>
+        <div className="cat-grid">
+          {groups.level.map(g => (
+            <button key={g.id} className="cat-card" onClick={() => setActiveGroup(g.id)}>
+              <span className="cat-emoji">{g.emoji}</span>
+              <span className="cat-label">{g.label}</span>
+              <span className="cat-count">{g.count}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CategoryView({ group, onBack, onOpen, onWish, onCmp, isWished, isCmp }) {
+  const [visible, setVisible] = React.useState(30);
+  const items = group.items;
+  const hasMore = visible < items.length;
+
+  React.useEffect(() => {
+    const onScroll = () => {
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 600 && hasMore) {
+        setVisible(v => Math.min(v + 30, items.length));
+      }
+    };
+    window.addEventListener("scroll", onScroll);
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [hasMore, items.length]);
+
+  return (
+    <div className="category-view fade">
+      <button className="cat-back" onClick={onBack}>← All Categories</button>
+      <SectionLabel kicker={group.emoji + " Category"} title={group.label} blurb={`${items.length} plant${items.length !== 1 ? "s" : ""} in this collection.`} />
+      <div className="grid">
+        {items.slice(0, visible).map((p, i) => (
+          <PlantCard key={p.id} plant={p}
+            onOpen={onOpen} onWish={onWish} onCmp={onCmp}
+            wished={isWished(p.id)} comped={isCmp(p.id)}
+            delay={Math.min(i, 18) * 25} />
+        ))}
+      </div>
+      {hasMore && (
+        <button className="cat-load-more" onClick={() => setVisible(v => Math.min(v + 30, items.length))}>
+          Load more ({items.length - visible} remaining)
+        </button>
+      )}
+    </div>
+  );
+}
+
+function _legacyShelvesUnused({ shelves, plants, onOpen, onWish, isWished, onCmp, isCmp }) {
+  return (
+    <>
+      {shelves.map((shelf, i) => (
+        <section key={shelf.title} className="shelf" style={{ animationDelay: `${i * 60}ms` }}>
+          <SectionLabel kicker={`Shelf № ${String(i + 1).padStart(2, "0")}`} title={shelf.title} blurb={shelf.blurb} />
+          <div className="shelf-scroll">
+            {shelf.items.map(p => <MiniCard key={p.id} plant={p} onOpen={onOpen} onWish={onWish} wished={isWished(p.id)} />)}
+          </div>
+        </section>
+      ))}
+    </>
+  );
+}
+
+function _unusedSpacer() {
+  return null;
 }
 
 function SectionLabel({ kicker, title, blurb }) {
@@ -835,7 +967,7 @@ function Detail({ plant, plants, onBack, onOpen, onWish, onCmp, onAddCollection,
 
       {tab === "story" && <CareTab plant={full} />}
       {tab === "varieties" && <VarietiesTab loading={loadingVars} varieties={varieties} plantName={full.common_name} />}
-      {tab === "buy" && <LocationsTab retailers={allRetailers} varieties={varieties} plantName={full.common_name} />}
+      {tab === "buy" && <LocationsTab retailers={allRetailers} varieties={varieties} plantName={full.common_name} plant={full} />}
       {tab === "traits" && <TraitsTab plant={full} />}
       {tab === "journal" && owned && <JournalTab plant={full} entries={journal} onAdd={(text) => onJournal(full.id, text)} />}
 
@@ -939,29 +1071,78 @@ function VarietiesTab({ loading, varieties, plantName }) {
   );
 }
 
-function LocationsTab({ retailers, varieties, plantName }) {
-  if (!retailers.length) return <div className="empty"><p>No retailers listed yet.</p></div>;
+function LocationsTab({ retailers, varieties, plantName, plant }) {
+  // Build smart retailer list based on plant category/traits
+  const smartRetailers = React.useMemo(() => {
+    const cat = (plant?.category || "").toLowerCase();
+    const tags = (plant?.tags || []).join(",").toLowerCase();
+    const isRare = plant?.rare;
+    const isCarnivorous = cat === "carnivorous";
+    const isSucculent = cat === "succulent" || cat === "cactus" || /succulent|cactus/.test(tags);
+    const isOrchid = cat === "orchid";
+    const isTree = cat === "tree";
+    const isHerb = /herb|edible/.test(tags) || plant?.edible;
+    const isAroid = cat === "aroid";
+    const isPerennial = cat === "perennial";
+    const isOutdoor = plant?.outdoor_ok;
+
+    // Mainstream retailers — always shown
+    const mainstream = ["Amazon", "Etsy", "Home Depot", "Lowe's", "Walmart"];
+
+    // Specialty retailers based on plant type
+    const specialty = [];
+    if (isCarnivorous) specialty.push("California Carnivores", "Predatory Plants");
+    if (isSucculent) specialty.push("Leaf & Clay", "Mountain Crest Gardens");
+    if (isAroid || isRare) specialty.push("Steve's Leaves", "Logee's", "Rare Rootz");
+    if (isOrchid) specialty.push("Logee's", "Steve's Leaves");
+    if (isTree || isOutdoor || isPerennial) specialty.push("Nature Hills", "Plantvine");
+    if (!isOutdoor && !isTree) specialty.push("Bloomscape", "Costa Farms", "Pistils Nursery");
+    if (isHerb) specialty.push("Bloomscape");
+
+    // Combine, dedupe, and merge with whatever's in the database
+    const dbRetailers = retailers || [];
+    const all = [...new Set([...dbRetailers, ...mainstream, ...specialty])];
+    return all;
+  }, [plant, retailers]);
+
   return (
-    <div className="fade retailer-grid">
-      {retailers.map(r => {
-        const avail = varieties.filter(v => v.prices.some(p => p.retailers?.name === r));
-        return (
-          <article key={r} className="retailer-card">
-            <a href={retailerLink(r, plantName)} target="_blank" rel="noopener noreferrer" className="retailer-name">
-              {r} <Icon n="arrow" s={12} />
-            </a>
-            {avail.map(v => {
-              const pr = v.prices.find(p => p.retailers?.name === r);
-              return (
-                <div key={v.id} className="retailer-row">
-                  <span>{v.name}</span>
-                  <span className={pr?.in_stock ? "price-in" : "price-out"}>{pr?.price_usd ? `$${pr.price_usd}` : "—"}</span>
+    <div className="fade buy-tab">
+      <p className="buy-intro">Curated retailers that carry plants like this. Search opens in a new tab.</p>
+      <div className="retailer-grid">
+        {smartRetailers.map(r => {
+          const avail = varieties?.filter(v => v.prices?.some(p => p.retailers?.name === r)) || [];
+          const hasInventory = avail.length > 0;
+          return (
+            <a
+              key={r}
+              href={retailerLink(r, plantName)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`retailer-tile ${hasInventory ? "has-stock" : ""}`}
+            >
+              <div className="retailer-tile-name">{r}</div>
+              <div className="retailer-tile-action">
+                {hasInventory
+                  ? `${avail.length} variet${avail.length === 1 ? "y" : "ies"} listed`
+                  : "Search →"}
+              </div>
+              {hasInventory && (
+                <div className="retailer-tile-prices">
+                  {avail.slice(0, 2).map(v => {
+                    const pr = v.prices.find(p => p.retailers?.name === r);
+                    return pr?.price_usd ? (
+                      <span key={v.id} className={pr.in_stock ? "price-in" : "price-out"}>
+                        ${pr.price_usd}
+                      </span>
+                    ) : null;
+                  })}
                 </div>
-              );
-            })}
-          </article>
-        );
-      })}
+              )}
+            </a>
+          );
+        })}
+      </div>
+      <p className="buy-disclosure">Some links are affiliate — we may earn a small commission at no cost to you.</p>
     </div>
   );
 }
@@ -1961,10 +2142,52 @@ function Styles() {
       }
       .variety-link:hover { background: var(--moss-bg); }
 
-      .retailer-grid {
-        display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-        gap: 12px;
+      .buy-tab { padding: 4px 0; }
+      .buy-intro {
+        font-family: 'Instrument Serif', serif; font-style: italic;
+        color: var(--ink-soft); font-size: 14px; margin: 0 0 16px;
       }
+      .buy-disclosure {
+        font-size: 11px; color: var(--ink-faint); margin: 18px 0 0;
+        text-align: center; font-style: italic;
+      }
+      .retailer-grid {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 10px;
+      }
+      .retailer-tile {
+        display: flex; flex-direction: column; gap: 4px;
+        padding: 14px 14px; min-height: 80px;
+        background: var(--paper); border: 1px solid var(--border);
+        border-radius: 8px; text-decoration: none;
+        transition: all 0.18s ease;
+      }
+      .retailer-tile:hover {
+        border-color: var(--moss); transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.05);
+      }
+      .retailer-tile.has-stock {
+        border-color: var(--moss); background: var(--moss-bg);
+      }
+      .retailer-tile-name {
+        font-family: 'Fraunces', serif;
+        font-size: 15px; font-weight: 500; color: var(--ink);
+        line-height: 1.2;
+      }
+      .retailer-tile-action {
+        font-size: 11px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.05em;
+      }
+      .retailer-tile.has-stock .retailer-tile-action {
+        color: var(--moss); font-weight: 600;
+      }
+      .retailer-tile-prices {
+        margin-top: 4px; display: flex; gap: 8px; font-size: 13px;
+        font-variant-numeric: tabular-nums;
+      }
+      .retailer-tile-prices .price-in { color: var(--moss); font-weight: 600; }
+      .retailer-tile-prices .price-out { color: var(--ink-faint); text-decoration: line-through; }
+      /* legacy retailer-card kept for older flows */
       .retailer-card {
         background: var(--paper); border: 1px solid var(--border);
         padding: 14px 16px;
@@ -2283,6 +2506,61 @@ function Styles() {
         font-family: 'Instrument Serif', serif;
         font-style: italic;
       }
+
+      /* Category Browser */
+      .category-hub { margin: 24px 0 60px; }
+      .cat-section { margin-bottom: 36px; }
+      .cat-section-title {
+        font-family: 'Fraunces', serif;
+        font-size: 18px; font-weight: 500;
+        color: var(--ink); margin: 0 0 14px;
+        text-transform: uppercase; letter-spacing: 0.08em;
+      }
+      .cat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 10px;
+      }
+      .cat-card {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 6px; padding: 18px 10px;
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: 10px; cursor: pointer;
+        transition: all 0.2s ease;
+        font-family: inherit; min-height: 110px;
+      }
+      .cat-card:hover, .cat-card:active {
+        border-color: var(--accent); transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+      }
+      .cat-emoji { font-size: 28px; line-height: 1; }
+      .cat-label {
+        font-family: 'Fraunces', serif; font-size: 14px;
+        font-weight: 500; color: var(--ink);
+        text-align: center; line-height: 1.2;
+      }
+      .cat-count {
+        font-size: 11px; color: var(--ink-faint);
+        font-variant-numeric: tabular-nums;
+      }
+      .category-view { margin: 24px 0 60px; }
+      .cat-back {
+        display: inline-flex; align-items: center; gap: 6px;
+        background: none; border: none; cursor: pointer;
+        font-family: inherit; font-size: 13px;
+        color: var(--ink-faint); margin-bottom: 14px;
+        padding: 6px 0;
+      }
+      .cat-back:hover { color: var(--accent); }
+      .cat-load-more {
+        display: block; margin: 30px auto;
+        padding: 12px 28px;
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: 999px; cursor: pointer;
+        font-family: inherit; font-size: 13px;
+        color: var(--ink); font-weight: 500;
+      }
+      .cat-load-more:hover { border-color: var(--accent); }
 
       .fade { animation: fadeUp 0.35s ease; }
       @keyframes fadeUp {
