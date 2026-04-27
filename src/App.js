@@ -1263,7 +1263,7 @@ function Detail({ plant, plants, onBack, onOpen, onWish, onCmp, onAddCollection,
       </nav>
 
       {tab === "story" && <CareTab plant={full} />}
-      {tab === "varieties" && <VarietiesTab loading={loadingVars} varieties={varieties} plantName={full.common_name} />}
+      {tab === "varieties" && <VarietiesTab loading={loadingVars} varieties={varieties} plantName={full.common_name} onJumpToBuy={() => setTab("buy")} />}
       {tab === "buy" && <LocationsTab retailers={allRetailers} varieties={varieties} plantName={full.common_name} plant={full} />}
       {tab === "traits" && <TraitsTab plant={full} />}
       {tab === "journal" && owned && <JournalTab plant={full} entries={journal} onAdd={(text) => onJournal(full.id, text)} />}
@@ -1326,40 +1326,65 @@ function CareTab({ plant }) {
   );
 }
 
-function VarietiesTab({ loading, varieties, plantName }) {
+function VarietiesTab({ loading, varieties, plantName, onJumpToBuy }) {
   if (loading) return <div className="empty"><span className="spinner" /> Loading varieties…</div>;
-  if (!varieties.length) return <div className="empty"><p>No variety records yet.</p></div>;
+  if (!varieties.length) return (
+    <div className="variety-empty">
+      <div className="variety-empty-icon">🌿</div>
+      <div className="variety-empty-title">A single classic</div>
+      <div className="variety-empty-body">
+        We haven't catalogued separate cultivars for {plantName}. Most growers carry the species form —
+        check the Buy tab to find one near you.
+      </div>
+    </div>
+  );
+
+  // Rarity ranking — drives the badge color
+  const rarityClass = r => {
+    if (!r) return "";
+    const t = r.toLowerCase();
+    if (/legend|holy.?grail|unicorn/.test(t)) return "legend";
+    if (/rare|collector/.test(t)) return "rare";
+    if (/uncommon/.test(t)) return "uncommon";
+    return "common";
+  };
+
   return (
     <div className="fade variety-list">
+      <div className="variety-intro">
+        <div className="variety-count">{varieties.length} {varieties.length === 1 ? "cultivar" : "cultivars"}</div>
+        <div className="variety-subtitle">A field guide to the named forms of {plantName}.</div>
+      </div>
+
       {varieties.map(v => {
-        const ps = v.prices ?? [];
-        const minP = ps.length ? Math.min(...ps.map(p => p.price_usd || Infinity)) : null;
-        const inStock = ps.some(p => p.in_stock);
+        const traits = Array.isArray(v.special_traits) ? v.special_traits : [];
+        const hasRetailers = (v.prices ?? []).some(p => p.retailers?.name);
         return (
           <article key={v.id} className="variety-card">
-            <div className="variety-head">
-              <div>
-                <div className="variety-name">{v.name}</div>
-                {v.rarity && <div className="variety-rarity">{v.rarity}</div>}
-              </div>
-              <div className="variety-price-box">
-                {minP !== null && Number.isFinite(minP) ? (
-                  <>
-                    <div className="variety-price">${minP}<span>+</span></div>
-                    <div className={`variety-stock ${inStock ? "in" : "out"}`}>{inStock ? "● In stock" : "○ Out of stock"}</div>
-                  </>
-                ) : <div className="variety-stock">Price TBA</div>}
-              </div>
-            </div>
+            <header className="variety-card-head">
+              <div className="variety-name">{v.name}</div>
+              {v.rarity && (
+                <span className={`variety-rarity-tag ${rarityClass(v.rarity)}`}>
+                  {v.rarity}
+                </span>
+              )}
+            </header>
+
             {v.description && <p className="variety-desc">{v.description}</p>}
-            {ps.length > 0 && (
-              <div className="variety-links">
-                {ps.map((p, i) => p.retailers?.name && (
-                  <a key={i} href={retailerLink(p.retailers.name, plantName)} target="_blank" rel="noopener noreferrer" className="variety-link">
-                    {p.retailers.name} · ${p.price_usd}
-                  </a>
+
+            {traits.length > 0 && (
+              <div className="variety-traits">
+                {traits.map((t, i) => (
+                  <span key={i} className="variety-trait">{t}</span>
                 ))}
               </div>
+            )}
+
+            {hasRetailers && (
+              <button className="variety-buy-link btn" onClick={() => onJumpToBuy?.()}>
+                See where to buy this variety
+                <Icon n="arrow" s={11} />
+              </button>
             )}
           </article>
         );
@@ -2710,51 +2735,118 @@ function Styles() {
       }
       .profile-row dd { font-size: 14px; color: var(--ink); line-height: 1.5; flex: 1; }
 
-      .variety-list { display: flex; flex-direction: column; gap: 12px; }
-      .variety-card {
-        background: var(--paper); border: 1px solid var(--border);
-        padding: 16px 18px;
+      /* Varieties — Field Guide */
+      .variety-list { display: flex; flex-direction: column; gap: 14px; }
+
+      .variety-intro {
+        padding: 4px 0 18px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 6px;
       }
-      .variety-head {
-        display: flex; justify-content: space-between; align-items: flex-start;
-        gap: 12px; margin-bottom: 10px;
+      .variety-count {
+        font-family: 'Fraunces', serif;
+        font-size: 13px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.18em;
+        font-weight: 600; margin-bottom: 4px;
+      }
+      .variety-subtitle {
+        font-family: 'Instrument Serif', serif;
+        font-style: italic; font-size: 17px;
+        color: var(--ink-soft); line-height: 1.4;
+      }
+
+      .variety-card {
+        background: var(--paper);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 20px 22px;
+        transition: border-color 0.18s ease;
+      }
+      .variety-card:hover { border-color: rgba(82,183,136,0.35); }
+
+      .variety-card-head {
+        display: flex; align-items: baseline; justify-content: space-between;
+        gap: 14px; margin-bottom: 10px; flex-wrap: wrap;
       }
       .variety-name {
         font-family: 'Fraunces', serif;
-        font-size: 17px; font-weight: 500; margin-bottom: 3px;
+        font-size: 19px; font-weight: 500;
+        color: var(--ink); letter-spacing: -0.01em;
+        line-height: 1.2;
       }
-      .variety-rarity {
-        font-size: 11px; color: var(--gold);
+      .variety-rarity-tag {
+        display: inline-block;
+        padding: 3px 10px; border-radius: 99px;
+        font-size: 10px; font-weight: 700;
         text-transform: uppercase; letter-spacing: 0.14em;
-        font-weight: 600;
+        white-space: nowrap;
+        background: var(--card); border: 1px solid var(--border);
+        color: var(--ink-soft);
       }
-      .variety-price-box { text-align: right; flex-shrink: 0; }
-      .variety-price {
-        font-family: 'Fraunces', serif;
-        font-size: 24px; font-weight: 500; color: var(--moss);
-        line-height: 1; letter-spacing: -0.02em;
+      .variety-rarity-tag.legend {
+        background: linear-gradient(135deg, rgba(212,165,86,0.18), rgba(212,165,86,0.08));
+        border-color: var(--gold); color: #8a6d2e;
       }
-      .variety-price span { font-size: 14px; }
-      .variety-stock {
-        font-size: 11px; font-weight: 600;
-        text-transform: uppercase; letter-spacing: 0.1em;
-        margin-top: 4px;
+      .variety-rarity-tag.rare {
+        background: rgba(212,165,86,0.12);
+        border-color: rgba(212,165,86,0.5); color: #8a6d2e;
       }
-      .variety-stock.in { color: var(--moss); }
-      .variety-stock.out { color: var(--ink-faint); }
+      .variety-rarity-tag.uncommon {
+        background: rgba(82,183,136,0.1);
+        border-color: rgba(82,183,136,0.3); color: #2d5e3e;
+      }
+
       .variety-desc {
-        font-size: 14px; color: var(--ink-soft); line-height: 1.6;
-        margin-bottom: 10px;
+        font-size: 14.5px;
+        color: var(--ink-soft);
+        line-height: 1.65;
+        margin: 0 0 12px;
       }
-      .variety-links { display: flex; gap: 6px; flex-wrap: wrap; }
-      .variety-link {
-        padding: 5px 12px; border-radius: 2px;
-        background: var(--cream); border: 1px solid var(--border);
-        color: var(--moss); text-decoration: none;
-        font-size: 12px; font-weight: 500;
-        transition: background 0.15s;
+
+      .variety-traits {
+        display: flex; gap: 6px; flex-wrap: wrap;
+        margin-bottom: 14px;
       }
-      .variety-link:hover { background: var(--moss-bg); }
+      .variety-trait {
+        padding: 4px 10px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 99px;
+        font-size: 11.5px;
+        color: var(--ink-soft);
+        font-weight: 500;
+      }
+
+      .variety-buy-link {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 6px 0;
+        font-family: inherit; font-size: 12.5px;
+        font-weight: 600;
+        color: var(--moss);
+        background: none; border: none;
+        cursor: pointer;
+        transition: gap 0.18s ease;
+      }
+      .variety-buy-link:hover { gap: 10px; }
+
+      .variety-empty {
+        text-align: center; padding: 60px 24px;
+        background: var(--paper);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+      }
+      .variety-empty-icon {
+        font-size: 36px; opacity: 0.4; margin-bottom: 12px;
+      }
+      .variety-empty-title {
+        font-family: 'Fraunces', serif;
+        font-size: 22px; color: var(--ink);
+        margin-bottom: 8px;
+      }
+      .variety-empty-body {
+        font-size: 14px; color: var(--ink-soft);
+        line-height: 1.6; max-width: 360px; margin: 0 auto;
+      }
 
       .buy-tab { padding: 4px 0; }
       .buy-intro {
