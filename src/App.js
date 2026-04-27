@@ -43,7 +43,7 @@ function plantZoneStatus(plant, zone) {
 }
 
 // ---------- plant images (Wikipedia + iNaturalist, multiple per plant, cached) ----------
-const IMG_KEY = "cultivar:imgs:v4";
+const IMG_KEY = "cultivar:imgs:v5";
 const imgCache = store.get(IMG_KEY, {});
 let imgDirty = false;
 setInterval(() => { if (imgDirty) { store.set(IMG_KEY, imgCache); imgDirty = false; } }, 2500);
@@ -53,44 +53,51 @@ const imgInflight = new Map();
 // Fetches up to 4 images for a plant — tries Wikipedia first (main + gallery),
 // then falls back to iNaturalist if Wikipedia has nothing.
 // Returns array of image URLs (always returns array, possibly empty).
+// Single canonical cache key per plant — independent of which surface called it
+function imageKeyFor(scientific, common) {
+  return `p:${(scientific || common || "").toLowerCase().trim()}`;
+}
+
 async function plantImages(scientific, common) {
-  const cacheKey = `multi:${scientific || ""}|${common || ""}`;
-  if (imgCache[cacheKey] !== undefined) return imgCache[cacheKey];
-  if (imgInflight.has(cacheKey)) return imgInflight.get(cacheKey);
+  const key = imageKeyFor(scientific, common);
+  if (imgCache[key] !== undefined) return imgCache[key];
+  if (imgInflight.has(key)) return imgInflight.get(key);
 
   const p = (async () => {
     const found = [];
+    const seen = new Set();
+    const addUrl = (u) => {
+      if (!u || seen.has(u)) return;
+      seen.add(u);
+      found.push(u);
+    };
 
-    // Try Wikipedia main image + gallery for scientific name first, then common name
+    // Try Wikipedia for both terms
     for (const term of [scientific, common].filter(Boolean)) {
       if (found.length >= 4) break;
       try {
-        // Get main pageimage (high quality hero)
         const heroRes = await fetch(
           `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&piprop=original&titles=${encodeURIComponent(term)}&origin=*&redirects=1`
         );
         const heroData = await heroRes.json();
         const heroPage = Object.values(heroData?.query?.pages ?? {})[0];
-        const heroUrl = heroPage?.original?.source;
-        if (heroUrl && !found.includes(heroUrl)) found.push(heroUrl);
+        if (heroPage?.original?.source) addUrl(heroPage.original.source);
         if (found.length >= 4) break;
 
-        // Get article gallery (additional photos)
         if (heroPage && !heroPage.missing) {
           const galRes = await fetch(
             `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=images&imlimit=20&titles=${encodeURIComponent(term)}&origin=*&redirects=1`
           );
           const galData = await galRes.json();
           const imgList = Object.values(galData?.query?.pages ?? {})[0]?.images ?? [];
-          // Filter to actual photo files, exclude logos/icons/SVG
+          // Loosened filter: just exclude obvious non-photos
           const photoTitles = imgList
             .map(i => i.title)
             .filter(t => /\.(jpe?g|png|webp)$/i.test(t))
-            .filter(t => !/(logo|icon|symbol|map|location|distribution|disambig|commons)/i.test(t))
+            .filter(t => !/^File:(Commons-logo|Edit-icon|Question_book|Wiktionary|Wikispecies|Symbol_)/i.test(t))
             .slice(0, 8);
 
           if (photoTitles.length) {
-            // Resolve titles to actual image URLs
             const urlRes = await fetch(
               `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=imageinfo&iiprop=url&titles=${encodeURIComponent(photoTitles.join("|"))}&origin=*`
             );
@@ -100,50 +107,53 @@ async function plantImages(scientific, common) {
               .filter(Boolean);
             for (const u of urls) {
               if (found.length >= 4) break;
-              if (!found.includes(u)) found.push(u);
+              addUrl(u);
             }
           }
         }
       } catch { /* try next term */ }
     }
 
-    // iNaturalist fallback if Wikipedia gave nothing or only 1
-    if (found.length < 2 && scientific) {
+    // iNaturalist fallback — runs whenever we still need images
+    if (found.length < 4 && scientific) {
       try {
         const inatRes = await fetch(
           `https://api.inaturalist.org/v1/taxa?q=${encodeURIComponent(scientific)}&rank=species,genus,variety&per_page=1`
         );
         const inatData = await inatRes.json();
         const taxon = inatData?.results?.[0];
-        if (taxon?.id) {
-          // Get observations with photos for this taxon
+        if (taxon?.default_photo?.medium_url) {
+          // Use the taxon's default photo first — it's the best representative
+          addUrl(taxon.default_photo.medium_url);
+        }
+        if (taxon?.id && found.length < 4) {
           const obsRes = await fetch(
             `https://api.inaturalist.org/v1/observations?taxon_id=${taxon.id}&photos=true&per_page=8&order_by=votes&quality_grade=research`
           );
           const obsData = await obsRes.json();
           const photos = (obsData?.results ?? [])
             .flatMap(o => o.photos || [])
-            .map(p => p.url?.replace("/square.", "/medium."))
+            .map(ph => ph.url?.replace("/square.", "/medium."))
             .filter(Boolean);
           for (const u of photos) {
             if (found.length >= 4) break;
-            if (!found.includes(u)) found.push(u);
+            addUrl(u);
           }
         }
-      } catch { /* iNat failed, just return what we have */ }
+      } catch { /* iNat failed */ }
     }
 
-    imgCache[cacheKey] = found;
+    imgCache[key] = found;
     imgDirty = true;
     return found;
   })();
 
-  imgInflight.set(cacheKey, p);
+  imgInflight.set(key, p);
   try { return await p; }
-  finally { imgInflight.delete(cacheKey); }
+  finally { imgInflight.delete(key); }
 }
 
-// Backwards-compat wrapper for cards that only need a single image
+// Backwards-compat wrapper for cards — same cache as detail gallery
 async function wikiImage(term) {
   if (!term) return null;
   const arr = await plantImages(term, null);
