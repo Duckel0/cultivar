@@ -840,25 +840,27 @@ function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDa
   return (
     <div className="fade">
       <section className="hero">
-        <div className="hero-eyebrow">Vol. I · The Field Guide</div>
-        <h1 className="hero-title">A <em>curated almanac</em><br/>of living things.</h1>
+        <div className="hero-eyebrow">The Field Guide</div>
+        <h1 className="hero-title">A curated almanac of <em>living things.</em></h1>
         <p className="hero-sub">
-          {loading ? "Opening the greenhouse gates…"
-            : `${plants.length.toLocaleString()} species catalogued. Search by name, mood, or condition — "low light", "pet safe", "something that blooms".`}
+          {loading ? "Opening the greenhouse…"
+            : `${plants.length.toLocaleString()} species — search by name, mood, or condition.`}
         </p>
-        <div className="search-wrap">
-          <Icon n="search" s={18} />
-          <input type="search" autoComplete="off" value={searchRaw}
-            onChange={e => setSearchRaw(e.target.value)}
-            placeholder="Try: low light pet safe…"
-            className="search-input" />
-          {searchRaw && (
-            <button className="btn search-clear" onClick={() => setSearchRaw("")}>
-              <Icon n="x" s={16} />
-            </button>
-          )}
+        <div className="hero-controls">
+          <div className="search-wrap">
+            <Icon n="search" s={18} />
+            <input type="search" autoComplete="off" value={searchRaw}
+              onChange={e => setSearchRaw(e.target.value)}
+              placeholder="Try: low light pet safe…"
+              className="search-input" />
+            {searchRaw && (
+              <button className="btn search-clear" onClick={() => setSearchRaw("")}>
+                <Icon n="x" s={16} />
+              </button>
+            )}
+          </div>
+          <ZonePicker zone={growZone} setZone={setGrowZone} />
         </div>
-        <ZonePicker zone={growZone} setZone={setGrowZone} />
       </section>
 
       {loading ? <LoadingState />
@@ -1953,12 +1955,12 @@ function Styles() {
       }
       .header-inner {
         max-width: 1240px; margin: 0 auto;
-        padding: 0 20px; height: 64px;
+        padding: 0 20px; height: 56px;
         display: flex; align-items: center; justify-content: space-between; gap: 16px;
       }
       .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
       .brand-mark {
-        width: 34px; height: 34px;
+        width: 30px; height: 30px;
         background: var(--moss); color: var(--cream);
         display: flex; align-items: center; justify-content: center;
         border-radius: 2px;
@@ -1967,12 +1969,16 @@ function Styles() {
       .brand-text { text-align: left; }
       .brand-name {
         font-family: 'Fraunces', serif; font-weight: 500;
-        font-size: 22px; letter-spacing: -0.025em; line-height: 1;
+        font-size: 20px; letter-spacing: -0.025em; line-height: 1;
       }
       .brand-tagline {
         font-size: 10px; color: var(--ink-faint);
         text-transform: uppercase; letter-spacing: 0.15em;
         margin-top: 3px; font-weight: 500;
+      }
+      @media (max-width: 600px) {
+        .brand-tagline { display: none; }
+        .header-inner { padding: 0 16px; }
       }
       .nav-desktop { display: flex; gap: 4px; }
       .nav-item {
@@ -2032,40 +2038,50 @@ function Styles() {
       }
       .error-card .btn { color: var(--rust); font-weight: 600; text-decoration: underline; }
 
-      .hero { padding: 28px 0 36px; border-bottom: 1px solid var(--border-soft); margin-bottom: 48px; }
-      .hero-eyebrow {
-        font-size: 11px; color: var(--ink-faint);
-        text-transform: uppercase; letter-spacing: 0.28em;
-        font-weight: 600; margin-bottom: 22px;
-        display: flex; align-items: center; gap: 12px;
+      .hero {
+        padding: 16px 0 24px;
+        border-bottom: 1px solid var(--border-soft);
+        margin-bottom: 32px;
       }
-      .hero-eyebrow::before, .hero-eyebrow::after {
-        content: ''; flex: 1; max-width: 60px; height: 1px; background: var(--border);
+      .hero-eyebrow {
+        font-size: 10px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.22em;
+        font-weight: 600; margin-bottom: 12px;
       }
       .hero-title {
         font-family: 'Fraunces', serif;
-        font-size: clamp(38px, 8vw, 72px);
-        font-weight: 300;
-        line-height: 0.95; letter-spacing: -0.035em;
-        margin-bottom: 20px;
+        font-size: clamp(26px, 4.5vw, 42px);
+        font-weight: 400;
+        line-height: 1.05; letter-spacing: -0.025em;
+        margin-bottom: 8px;
+        max-width: 700px;
       }
       .hero-title em {
         font-family: 'Instrument Serif', serif;
         font-style: italic; font-weight: 400;
-        color: var(--moss); font-size: 1.05em;
+        color: var(--moss); font-size: 1.02em;
       }
       .hero-sub {
-        font-size: clamp(15px, 2.2vw, 17px);
-        color: var(--ink-soft); line-height: 1.55;
-        max-width: 560px; margin-bottom: 28px;
+        font-size: clamp(13px, 1.6vw, 14.5px);
+        color: var(--ink-soft); line-height: 1.5;
+        max-width: 520px; margin-bottom: 18px;
+      }
+      .hero-controls {
+        display: flex; align-items: center; gap: 12px;
+        flex-wrap: wrap;
+      }
+      @media (max-width: 600px) {
+        .hero { padding: 12px 0 20px; margin-bottom: 24px; }
+        .hero-eyebrow { margin-bottom: 8px; }
+        .hero-sub { margin-bottom: 14px; }
       }
       .search-wrap {
-        position: relative; max-width: 560px;
+        position: relative; flex: 1; min-width: 240px; max-width: 480px;
         background: var(--paper);
         border: 1.5px solid var(--border);
         border-radius: 2px;
         display: flex; align-items: center;
-        padding: 0 16px; gap: 10px;
+        padding: 0 14px; gap: 10px;
         transition: border-color 0.15s, box-shadow 0.15s;
       }
       .search-wrap:focus-within {
@@ -2074,19 +2090,19 @@ function Styles() {
       }
       .search-wrap > svg { color: var(--ink-faint); flex-shrink: 0; }
       .search-input {
-        flex: 1; padding: 16px 0;
+        flex: 1; padding: 13px 0;
         background: transparent; border: none; outline: none;
-        font-family: inherit; font-size: 16px; color: var(--ink);
+        font-family: inherit; font-size: 15px; color: var(--ink);
       }
       .search-input::placeholder { color: var(--ink-faint); }
       .search-clear {
-        width: 28px; height: 28px; border-radius: 99px;
+        width: 26px; height: 26px; border-radius: 99px;
         display: flex; align-items: center; justify-content: center;
         color: var(--ink-faint);
       }
 
       /* Zone Picker */
-      .zone-picker { position: relative; display: inline-block; margin-top: 14px; }
+      .zone-picker { position: relative; display: inline-block; }
       .zone-pill {
         display: inline-flex; align-items: center; gap: 8px;
         padding: 8px 14px; border-radius: 999px;
@@ -2188,7 +2204,7 @@ function Styles() {
         font-family: 'Instrument Serif', serif;
       }
 
-      .featured { margin-bottom: 56px; }
+      .featured { margin-bottom: 40px; }
       .featured-card {
         display: grid; grid-template-columns: 1.1fr 1fr;
         background: var(--paper); border: 1px solid var(--border);
@@ -2198,10 +2214,10 @@ function Styles() {
       }
       @media (hover: hover) { .featured-card:hover { box-shadow: var(--shadow-lift); transform: translateY(-2px); } }
       @media (max-width: 720px) { .featured-card { grid-template-columns: 1fr; } }
-      .featured-image { height: 400px; position: relative; }
-      @media (max-width: 720px) { .featured-image { height: 260px; } }
-      .featured-body { padding: 36px; display: flex; flex-direction: column; justify-content: center; }
-      @media (max-width: 600px) { .featured-body { padding: 24px; } }
+      .featured-image { height: 320px; position: relative; }
+      @media (max-width: 720px) { .featured-image { height: 220px; } }
+      .featured-body { padding: 28px; display: flex; flex-direction: column; justify-content: center; }
+      @media (max-width: 600px) { .featured-body { padding: 22px; } }
       .featured-kicker {
         font-size: 11px; color: var(--gold);
         text-transform: uppercase; letter-spacing: 0.24em;
