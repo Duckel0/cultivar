@@ -179,6 +179,41 @@ const retailerLink = (retailer, plant) => {
 };
 
 // ---------- smart natural-language search ----------
+// Levenshtein-style fuzzy distance — small enough for typo tolerance
+function fuzzyScore(query, target) {
+  if (!query || !target) return 0;
+  const q = query.toLowerCase();
+  const t = target.toLowerCase();
+  if (t === q) return 1000;
+  if (t.startsWith(q)) return 800 - (t.length - q.length);
+  if (t.includes(q)) return 600 - (t.length - q.length);
+  // single-character typo / transposition tolerance
+  if (q.length >= 4) {
+    let matches = 0;
+    let qi = 0;
+    for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+      if (t[ti] === q[qi]) { matches++; qi++; }
+    }
+    if (matches >= q.length - 1) return 300 - (t.length - matches);
+  }
+  return 0;
+}
+
+// Fast in-memory suggestions for the live dropdown
+function suggestPlants(plants, query, limit = 6) {
+  if (!query || !query.trim()) return [];
+  const q = query.trim();
+  const scored = [];
+  for (const p of plants) {
+    const cn = fuzzyScore(q, p.common_name || "");
+    const sn = fuzzyScore(q, p.scientific_name || "");
+    const score = Math.max(cn, sn * 0.9);
+    if (score > 0) scored.push({ p, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map(x => x.p);
+}
+
 const SMART = [
   { re: /\b(pet safe|dog safe|cat safe|non-?toxic)\b/i, f: p => p.toxicity === "Pet Safe" },
   { re: /\b(toxic|poisonous|dangerous)\b/i, f: p => p.toxicity && p.toxicity !== "Pet Safe" },
@@ -202,7 +237,8 @@ function smartFilter(plants, query) {
   for (const k of SMART) {
     if (k.re.test(rem)) { filters.push(k.f); rem = rem.replace(k.re, " ").replace(/\s+/g, " ").trim(); }
   }
-  return plants.filter(p => {
+  // First pass: exact substring matches
+  const exact = plants.filter(p => {
     for (const f of filters) if (!f(p)) return false;
     if (!rem) return true;
     return p.common_name?.toLowerCase().includes(rem)
@@ -211,6 +247,22 @@ function smartFilter(plants, query) {
       || p.category?.toLowerCase().includes(rem)
       || p.tags?.some(t => t.toLowerCase().includes(rem));
   });
+  // If exact found something OR there's no text query, return that
+  if (exact.length > 0 || !rem) return exact;
+  // Fallback: fuzzy match — rescues typos like "monstara"
+  const fuzzy = [];
+  for (const p of plants) {
+    let pass = true;
+    for (const f of filters) if (!f(p)) { pass = false; break; }
+    if (!pass) continue;
+    const score = Math.max(
+      fuzzyScore(rem, p.common_name || ""),
+      fuzzyScore(rem, p.scientific_name || "") * 0.9
+    );
+    if (score >= 300) fuzzy.push({ p, score });
+  }
+  fuzzy.sort((a, b) => b.score - a.score);
+  return fuzzy.map(x => x.p);
 }
 
 // ---------- icons ----------
@@ -450,6 +502,81 @@ function PlantGallery({ plant, height = 460 }) {
   );
 }
 
+// ---------- live search dropdown ----------
+function LiveSearch({ value, onChange, plants, onOpen, placeholder }) {
+  const [focused, setFocused] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const wrapRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const suggestions = useMemo(
+    () => focused && value.trim() ? suggestPlants(plants, value, 6) : [],
+    [plants, value, focused]
+  );
+
+  // Reset highlight when suggestions change
+  useEffect(() => { setHighlight(0); }, [value]);
+
+  // Click outside closes
+  useEffect(() => {
+    const onClick = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setFocused(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  const choose = (p) => {
+    setFocused(false);
+    onChange("");
+    onOpen(p);
+  };
+
+  const onKey = (e) => {
+    if (!suggestions.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight(h => (h + 1) % suggestions.length); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight(h => (h - 1 + suggestions.length) % suggestions.length); }
+    else if (e.key === "Enter" && suggestions[highlight]) { e.preventDefault(); choose(suggestions[highlight]); }
+    else if (e.key === "Escape") { setFocused(false); inputRef.current?.blur(); }
+  };
+
+  return (
+    <div className="search-wrap" ref={wrapRef}>
+      <Icon n="search" s={18} />
+      <input
+        ref={inputRef}
+        type="search" autoComplete="off" value={value}
+        onChange={e => { onChange(e.target.value); setFocused(true); }}
+        onFocus={() => setFocused(true)}
+        onKeyDown={onKey}
+        placeholder={placeholder || "Try: low light pet safe…"}
+        className="search-input" />
+      {value && (
+        <button className="btn search-clear" onClick={() => { onChange(""); inputRef.current?.focus(); }}>
+          <Icon n="x" s={16} />
+        </button>
+      )}
+      {focused && suggestions.length > 0 && (
+        <div className="suggest-pop">
+          {suggestions.map((p, i) => (
+            <button key={p.id}
+              className={`suggest-item btn ${i === highlight ? "on" : ""}`}
+              onMouseEnter={() => setHighlight(i)}
+              onClick={() => choose(p)}>
+              <PlantImage plant={p} height={40} rounded={2} />
+              <div className="suggest-text">
+                <div className="suggest-name">{p.common_name}</div>
+                <div className="suggest-sci">{p.scientific_name}</div>
+              </div>
+              {p.rare && <span className="suggest-rare">✦</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- toast ----------
 function useToast() {
   const [m, set] = useState(null);
@@ -543,6 +670,25 @@ export default function Cultivar() {
       } else if (r.category) {
         setActiveCategory(r.category);
       }
+      // Import shared wishlist from URL ?wish=slug1,slug2,...
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const wishParam = params.get("wish");
+        if (wishParam) {
+          const slugs = wishParam.split(",").map(s => s.trim()).filter(Boolean);
+          const found = slugs.map(s => data.find(x => x.slug === s)).filter(Boolean);
+          if (found.length) {
+            setWishlist(prev => {
+              const existing = new Set(prev.map(p => p.id));
+              const newOnes = found.filter(p => !existing.has(p.id));
+              if (newOnes.length) toast.show(`Added ${newOnes.length} plant${newOnes.length === 1 ? "" : "s"} to your wishlist`);
+              return [...prev, ...newOnes];
+            });
+            // Clean URL after import
+            window.history.replaceState({}, "", window.location.pathname);
+          }
+        }
+      } catch {}
     } catch (e) {
       console.error(e);
       setError("Couldn't reach the greenhouse. Try again?");
@@ -587,6 +733,27 @@ export default function Cultivar() {
     let seed = dayKey;
     seed = ((seed * 9301) + 49297) % 233280;
     return plants[seed % plants.length];
+  }, [plants]);
+
+  // Recent specimens — last 14 days of Plant of the Day, deduped
+  const podArchive = useMemo(() => {
+    if (!plants.length) return [];
+    const seen = new Set();
+    const out = [];
+    const now = new Date();
+    for (let daysAgo = 1; daysAgo <= 14 && out.length < 12; daysAgo++) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - daysAgo);
+      const dayKey = d.getFullYear() * 1000 + d.getMonth() * 50 + d.getDate();
+      let seed = dayKey;
+      seed = ((seed * 9301) + 49297) % 233280;
+      const p = plants[seed % plants.length];
+      if (p && !seen.has(p.id)) {
+        seen.add(p.id);
+        out.push({ plant: p, date: d });
+      }
+    }
+    return out;
   }, [plants]);
 
   const toggleWish = useCallback((p) => {
@@ -697,6 +864,7 @@ export default function Cultivar() {
             loading={loading} plants={plants} filtered={filtered}
             searchRaw={searchRaw} setSearchRaw={setSearchRaw}
             plantOfDay={plantOfDay}
+            podArchive={podArchive}
             onOpen={openPlant} onWish={toggleWish} onCmp={toggleCmp}
             isWished={isWished} isCmp={isCmp}
             growZone={growZone} setGrowZone={setGrowZone}
@@ -724,7 +892,7 @@ export default function Cultivar() {
         )}
 
         {view === "wishlist" && (
-          <Wishlist plants={wishlist} onOpen={openPlant} onRemove={id => setWishlist(wishlist.filter(x => x.id !== id))} />
+          <Wishlist plants={wishlist} onOpen={openPlant} onRemove={id => setWishlist(wishlist.filter(x => x.id !== id))} toast={toast.show} />
         )}
 
         {view === "collection" && (
@@ -737,6 +905,11 @@ export default function Cultivar() {
 
         {view === "quiz" && <Quiz plants={plants} onOpen={openPlant} />}
       </main>
+
+      <MobileNav view={view} onNav={(id) => {
+        if (id === "catalog") goHome();
+        else setView(id);
+      }} wishCount={wishlist.length} />
 
       <Footer count={plants.length} />
     </div>
@@ -795,6 +968,31 @@ const Header = memo(({ view, wishCount, cmpCount, collectionCount, onNav, onHome
   );
 });
 
+// ---------- MOBILE BOTTOM NAV ----------
+const MobileNav = memo(({ view, onNav, wishCount }) => {
+  const items = [
+    { id: "catalog", label: "Home", icon: "compass" },
+    { id: "collection", label: "Mine", icon: "leaf" },
+    { id: "wishlist", label: "Saved", icon: "heart", badge: wishCount },
+    { id: "compare", label: "Compare", icon: "cmp" },
+  ];
+  return (
+    <nav className="mobile-nav">
+      {items.map(t => (
+        <button key={t.id}
+          className={`mobile-nav-item btn ${view === t.id ? "on" : ""}`}
+          onClick={() => onNav(t.id)}>
+          <div className="mobile-nav-icon-wrap">
+            <Icon n={t.icon} s={20} />
+            {t.badge > 0 && <span className="mobile-nav-badge">{t.badge}</span>}
+          </div>
+          <span className="mobile-nav-label">{t.label}</span>
+        </button>
+      ))}
+    </nav>
+  );
+});
+
 // ---------- ZONE PICKER ----------
 function ZonePicker({ zone, setZone }) {
   const [open, setOpen] = useState(false);
@@ -834,7 +1032,7 @@ function ZonePicker({ zone, setZone }) {
 }
 
 // ---------- CATALOG ----------
-function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDay, onOpen, onWish, onCmp, isWished, isCmp, growZone, setGrowZone, activeCategory, openCategory, closeCategory }) {
+function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDay, podArchive, onOpen, onWish, onCmp, isWished, isCmp, growZone, setGrowZone, activeCategory, openCategory, closeCategory }) {
   const isSearching = !!searchRaw.trim();
 
   return (
@@ -847,18 +1045,7 @@ function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDa
             : `${plants.length.toLocaleString()} species — search by name, mood, or condition.`}
         </p>
         <div className="hero-controls">
-          <div className="search-wrap">
-            <Icon n="search" s={18} />
-            <input type="search" autoComplete="off" value={searchRaw}
-              onChange={e => setSearchRaw(e.target.value)}
-              placeholder="Try: low light pet safe…"
-              className="search-input" />
-            {searchRaw && (
-              <button className="btn search-clear" onClick={() => setSearchRaw("")}>
-                <Icon n="x" s={16} />
-              </button>
-            )}
-          </div>
+          <LiveSearch value={searchRaw} onChange={setSearchRaw} plants={plants} onOpen={onOpen} />
           <ZonePicker zone={growZone} setZone={setGrowZone} />
         </div>
       </section>
@@ -889,7 +1076,35 @@ function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDa
             </section>
           )}
 
+          {podArchive && podArchive.length > 0 && (
+            <section className="pod-archive">
+              <SectionLabel kicker="The Past Two Weeks" title="Recent Specimens" />
+              <div className="pod-archive-scroll">
+                {podArchive.map(({ plant, date }) => (
+                  <button key={plant.id} className="pod-archive-card btn" onClick={() => onOpen(plant)}>
+                    <div className="pod-archive-img">
+                      <PlantImage plant={plant} height="100%" rounded={2} />
+                    </div>
+                    <div className="pod-archive-date">
+                      {date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    </div>
+                    <div className="pod-archive-name">{plant.common_name}</div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section className="mood-chips">
+            {(() => {
+              const month = new Date().getMonth();
+              const seasonal =
+                month >= 2 && month <= 4 ? { label: "🌱 Plant for spring", q: "outdoor" } :
+                month >= 5 && month <= 7 ? { label: "☀️ Summer survivors", q: "drought" } :
+                month >= 8 && month <= 10 ? { label: "🍂 Cool down with foliage", q: "low light" } :
+                { label: "❄️ Winter blooms", q: "flowering" };
+              return <button className="chip btn chip-featured" onClick={() => setSearchRaw(seasonal.q)}>{seasonal.label}</button>;
+            })()}
             {[
               { label: "Low light", q: "low light" },
               { label: "Pet safe", q: "pet safe" },
@@ -1657,13 +1872,32 @@ function Compare({ plants, onRemove, onOpen, growZone }) {
   );
 }
 
-function Wishlist({ plants, onOpen, onRemove }) {
+function Wishlist({ plants, onOpen, onRemove, toast }) {
   if (!plants.length) return (
     <EmptyState emoji="🌱" title="Your wishlist is empty" body="Tap the heart on any plant to save it here for later." />
   );
+  const share = async () => {
+    // Encode slugs into URL hash so it's shareable
+    const slugs = plants.map(p => p.slug).filter(Boolean);
+    const url = `${window.location.origin}/?wish=${encodeURIComponent(slugs.join(","))}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: "My Cultivar Wishlist", url }); return; } catch {}
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast?.("Link copied to clipboard");
+    } catch {
+      toast?.("Couldn't copy link", "err");
+    }
+  };
   return (
     <div className="fade page-wrap">
-      <SectionLabel kicker="Saved for Later" title="Wishlist" blurb={`${plants.length} plant${plants.length !== 1 ? "s" : ""} you'd like to bring home.`} />
+      <div className="wishlist-header">
+        <SectionLabel kicker="Saved for Later" title="Wishlist" blurb={`${plants.length} plant${plants.length !== 1 ? "s" : ""} you'd like to bring home.`} />
+        <button className="btn share-wishlist" onClick={share}>
+          <Icon n="share" s={14} /> Share wishlist
+        </button>
+      </div>
       <div className="grid">
         {plants.map((p, i) => (
           <article key={p.id} className="card card-fade" onClick={() => onOpen(p)} style={{ animationDelay: `${i * 30}ms` }}>
@@ -2102,6 +2336,154 @@ function Styles() {
       }
 
       /* Zone Picker */
+      /* Live search dropdown */
+      .suggest-pop {
+        position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+        z-index: 80;
+        background: var(--paper); border: 1px solid var(--border);
+        border-radius: 4px;
+        box-shadow: 0 12px 36px rgba(0,0,0,0.12);
+        overflow: hidden;
+        max-height: 420px; overflow-y: auto;
+      }
+      .suggest-item {
+        display: flex; align-items: center; gap: 12px;
+        width: 100%; padding: 10px 12px;
+        text-align: left; cursor: pointer;
+        background: transparent; border: none;
+        border-bottom: 1px solid var(--border-soft);
+        font-family: inherit;
+        transition: background 0.12s ease;
+      }
+      .suggest-item:last-child { border-bottom: none; }
+      .suggest-item.on { background: var(--card); }
+      .suggest-item > div:first-child { flex: 0 0 50px; height: 40px; border-radius: 2px; overflow: hidden; }
+      .suggest-text { flex: 1; min-width: 0; }
+      .suggest-name {
+        font-family: 'Fraunces', serif; font-size: 15px; font-weight: 500;
+        color: var(--ink); line-height: 1.2;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .suggest-sci {
+        font-family: 'Instrument Serif', serif; font-style: italic;
+        font-size: 12px; color: var(--ink-soft); line-height: 1.3;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .suggest-rare {
+        color: var(--gold); font-size: 14px; flex-shrink: 0;
+      }
+
+      /* Mobile bottom nav */
+      .mobile-nav {
+        display: none;
+        position: fixed; bottom: 0; left: 0; right: 0;
+        z-index: 90;
+        background: var(--cream);
+        border-top: 1px solid var(--border);
+        padding: 6px 0 max(6px, env(safe-area-inset-bottom));
+        justify-content: space-around;
+        backdrop-filter: blur(10px);
+        background: rgba(244, 237, 224, 0.92);
+      }
+      @media (max-width: 720px) { .mobile-nav { display: flex; } }
+      .mobile-nav-item {
+        flex: 1; display: flex; flex-direction: column;
+        align-items: center; gap: 3px;
+        padding: 6px 4px;
+        background: transparent; border: none;
+        color: var(--ink-faint);
+        font-family: inherit; cursor: pointer;
+        transition: color 0.15s ease;
+      }
+      .mobile-nav-item.on { color: var(--moss); }
+      .mobile-nav-icon-wrap {
+        position: relative;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .mobile-nav-badge {
+        position: absolute; top: -3px; right: -8px;
+        min-width: 16px; height: 16px;
+        padding: 0 4px;
+        background: var(--moss); color: var(--cream);
+        border-radius: 99px;
+        font-size: 9px; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .mobile-nav-label {
+        font-size: 10px; font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+      /* Body padding so bottom nav doesn't cover content */
+      @media (max-width: 720px) {
+        body, .app { padding-bottom: 64px; }
+      }
+
+      /* Plant of the Day archive */
+      .pod-archive { margin-bottom: 40px; }
+      .pod-archive-scroll {
+        display: flex; gap: 12px;
+        overflow-x: auto; padding-bottom: 8px;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+      }
+      .pod-archive-scroll::-webkit-scrollbar { height: 6px; }
+      .pod-archive-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+      .pod-archive-card {
+        flex: 0 0 140px;
+        display: flex; flex-direction: column;
+        text-align: left;
+        background: transparent; border: none;
+        cursor: pointer; padding: 0;
+        font-family: inherit;
+        scroll-snap-align: start;
+        transition: transform 0.18s ease;
+      }
+      .pod-archive-card:hover { transform: translateY(-3px); }
+      .pod-archive-img {
+        width: 100%; height: 110px;
+        border-radius: 2px; overflow: hidden;
+        margin-bottom: 8px;
+        border: 1px solid var(--border);
+      }
+      .pod-archive-date {
+        font-size: 10px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.14em;
+        font-weight: 600; margin-bottom: 2px;
+      }
+      .pod-archive-name {
+        font-family: 'Fraunces', serif;
+        font-size: 13px; font-weight: 500;
+        color: var(--ink); line-height: 1.3;
+        overflow: hidden; text-overflow: ellipsis;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      }
+
+      /* Featured seasonal chip */
+      .chip-featured {
+        background: linear-gradient(135deg, rgba(82,183,136,0.18), rgba(82,183,136,0.08));
+        border-color: var(--moss);
+        color: var(--moss-dark, #2d5e3e);
+        font-weight: 600;
+      }
+      .chip-featured:hover { background: rgba(82,183,136,0.22); }
+
+      /* Wishlist share */
+      .wishlist-header {
+        display: flex; align-items: flex-start; justify-content: space-between;
+        gap: 16px; margin-bottom: 20px; flex-wrap: wrap;
+      }
+      .wishlist-header .section-label { margin-bottom: 0; flex: 1; }
+      .share-wishlist {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 8px 14px; border-radius: 99px;
+        background: var(--paper); border: 1px solid var(--border);
+        color: var(--ink-soft); font-family: inherit; font-size: 13px;
+        font-weight: 500; cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.18s ease;
+      }
+      .share-wishlist:hover { border-color: var(--moss); color: var(--moss); }
+
       .zone-picker { position: relative; display: inline-block; }
       .zone-pill {
         display: inline-flex; align-items: center; gap: 8px;
