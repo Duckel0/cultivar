@@ -970,9 +970,7 @@ function Detail({ plant, plants, onBack, onOpen, onWish, onCmp, onAddCollection,
             Varieties · {varieties.length}
           </button>
         )}
-        {allRetailers.length > 0 && (
-          <button className={`tab btn ${tab === "buy" ? "on" : ""}`} onClick={() => setTab("buy")}>Where to Buy</button>
-        )}
+        <button className={`tab btn ${tab === "buy" ? "on" : ""}`} onClick={() => setTab("buy")}>Where to Buy</button>
         <button className={`tab btn ${tab === "traits" ? "on" : ""}`} onClick={() => setTab("traits")}>Traits</button>
         {owned && (
           <button className={`tab btn ${tab === "journal" ? "on" : ""}`} onClick={() => setTab("journal")}>
