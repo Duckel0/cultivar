@@ -256,6 +256,7 @@ function useToast() {
 function getRoute() {
   const p = window.location.pathname;
   if (p.startsWith("/plant/")) return { view: "detail", slug: p.slice(7) };
+  if (p.startsWith("/category/")) return { view: "catalog", category: p.slice(10) };
   return { view: "catalog" };
 }
 
@@ -265,6 +266,7 @@ function getRoute() {
 export default function Cultivar() {
   const [view, setView] = useState("catalog");
   const [selected, setSelected] = useState(null);
+  const [activeCategory, setActiveCategory] = useState(null);
   const [plants, setPlants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -316,6 +318,8 @@ export default function Cultivar() {
       if (r.view === "detail" && r.slug) {
         const f = data.find(x => x.slug === r.slug);
         if (f) { setSelected(f); setView("detail"); }
+      } else if (r.category) {
+        setActiveCategory(r.category);
       }
     } catch (e) {
       console.error(e);
@@ -338,7 +342,13 @@ export default function Cultivar() {
       if (r.view === "detail" && r.slug) {
         const f = plants.find(x => x.slug === r.slug);
         if (f) { setSelected(f); setView("detail"); }
-      } else { setView("catalog"); setSelected(null); }
+      } else if (r.category) {
+        setView("catalog"); setSelected(null);
+        setActiveCategory(r.category);
+      } else {
+        setView("catalog"); setSelected(null);
+        setActiveCategory(null);
+      }
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -402,10 +412,36 @@ export default function Cultivar() {
     document.title = `${p.common_name} — Cultivar`;
   }, []);
 
+  const openCategory = useCallback((catId) => {
+    setActiveCategory(catId);
+    window.history.pushState({}, "", `/category/${catId}`);
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, []);
+
+  const closeCategory = useCallback(() => {
+    setActiveCategory(null);
+    window.history.pushState({}, "", "/");
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, []);
+
+  // Smart back from a plant detail: if user came from a category, return to it
+  const goBackFromDetail = useCallback(() => {
+    setView("catalog"); setSelected(null);
+    if (activeCategory) {
+      window.history.pushState({}, "", `/category/${activeCategory}`);
+    } else {
+      window.history.pushState({}, "", "/");
+      document.title = "Cultivar — The Plant Journal";
+    }
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [activeCategory]);
+
   const goHome = useCallback(() => {
     setView("catalog"); setSelected(null);
+    setActiveCategory(null);
     window.history.pushState({}, "", "/");
     document.title = "Cultivar — The Plant Journal";
+    window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
 
   const isWished = id => wishlist.some(w => w.id === id);
@@ -442,13 +478,16 @@ export default function Cultivar() {
             onOpen={openPlant} onWish={toggleWish} onCmp={toggleCmp}
             isWished={isWished} isCmp={isCmp}
             growZone={growZone} setGrowZone={setGrowZone}
+            activeCategory={activeCategory}
+            openCategory={openCategory}
+            closeCategory={closeCategory}
           />
         )}
 
         {view === "detail" && selected && (
           <Detail
             plant={selected} plants={plants}
-            onBack={goHome} onOpen={openPlant}
+            onBack={goBackFromDetail} onOpen={openPlant}
             onWish={toggleWish} onCmp={toggleCmp}
             onAddCollection={addCollection} onRemoveCollection={removeCollection}
             onJournal={addJournal} journal={journal[selected.id] ?? []}
@@ -573,7 +612,7 @@ function ZonePicker({ zone, setZone }) {
 }
 
 // ---------- CATALOG ----------
-function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDay, onOpen, onWish, onCmp, isWished, isCmp, growZone, setGrowZone }) {
+function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDay, onOpen, onWish, onCmp, isWished, isCmp, growZone, setGrowZone, activeCategory, openCategory, closeCategory }) {
   const isSearching = !!searchRaw.trim();
 
   return (
@@ -641,7 +680,7 @@ function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDa
             ))}
           </section>
 
-          <CategoryBrowser plants={plants} onOpen={onOpen} onWish={onWish} onCmp={onCmp} isWished={isWished} isCmp={isCmp} />
+          <CategoryBrowser plants={plants} onOpen={onOpen} onWish={onWish} onCmp={onCmp} isWished={isWished} isCmp={isCmp} activeCategory={activeCategory} openCategory={openCategory} closeCategory={closeCategory} />
         </>
       )}
     </div>
@@ -651,9 +690,7 @@ function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDa
 // ============================================================
 // CATEGORY BROWSER — replaces the giant alphabetical dump
 // ============================================================
-function CategoryBrowser({ plants, onOpen, onWish, onCmp, isWished, isCmp }) {
-  const [activeGroup, setActiveGroup] = useState(null);
-
+function CategoryBrowser({ plants, onOpen, onWish, onCmp, isWished, isCmp, activeCategory, openCategory, closeCategory }) {
   // Define groupings — slices the catalog by type, vibe, and difficulty
   const groups = useMemo(() => {
     const byType = [
@@ -690,10 +727,10 @@ function CategoryBrowser({ plants, onOpen, onWish, onCmp, isWished, isCmp }) {
     return { type: fill(byType), vibe: fill(byVibe), level: fill(byLevel) };
   }, [plants]);
 
-  const active = activeGroup ? [...groups.type, ...groups.vibe, ...groups.level].find(g => g.id === activeGroup) : null;
+  const active = activeCategory ? [...groups.type, ...groups.vibe, ...groups.level].find(g => g.id === activeCategory) : null;
 
   if (active) {
-    return <CategoryView group={active} plants={plants} onBack={() => setActiveGroup(null)} onOpen={onOpen} onWish={onWish} onCmp={onCmp} isWished={isWished} isCmp={isCmp} />;
+    return <CategoryView group={active} plants={plants} onBack={() => closeCategory()} onOpen={onOpen} onWish={onWish} onCmp={onCmp} isWished={isWished} isCmp={isCmp} />;
   }
 
   return (
@@ -703,7 +740,7 @@ function CategoryBrowser({ plants, onOpen, onWish, onCmp, isWished, isCmp }) {
         <h3 className="cat-section-title">By Type</h3>
         <div className="cat-grid">
           {groups.type.map(g => (
-            <button key={g.id} className="cat-card" onClick={() => setActiveGroup(g.id)}>
+            <button key={g.id} className="cat-card" onClick={() => openCategory(g.id)}>
               <span className="cat-emoji">{g.emoji}</span>
               <span className="cat-label">{g.label}</span>
               <span className="cat-count">{g.count}</span>
@@ -715,7 +752,7 @@ function CategoryBrowser({ plants, onOpen, onWish, onCmp, isWished, isCmp }) {
         <h3 className="cat-section-title">By Vibe</h3>
         <div className="cat-grid">
           {groups.vibe.map(g => (
-            <button key={g.id} className="cat-card" onClick={() => setActiveGroup(g.id)}>
+            <button key={g.id} className="cat-card" onClick={() => openCategory(g.id)}>
               <span className="cat-emoji">{g.emoji}</span>
               <span className="cat-label">{g.label}</span>
               <span className="cat-count">{g.count}</span>
@@ -727,7 +764,7 @@ function CategoryBrowser({ plants, onOpen, onWish, onCmp, isWished, isCmp }) {
         <h3 className="cat-section-title">By Difficulty</h3>
         <div className="cat-grid">
           {groups.level.map(g => (
-            <button key={g.id} className="cat-card" onClick={() => setActiveGroup(g.id)}>
+            <button key={g.id} className="cat-card" onClick={() => openCategory(g.id)}>
               <span className="cat-emoji">{g.emoji}</span>
               <span className="cat-label">{g.label}</span>
               <span className="cat-count">{g.count}</span>
