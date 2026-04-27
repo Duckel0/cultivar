@@ -20,6 +20,28 @@ async function sb(path) {
   return res.json();
 }
 
+// ---------- USDA zone logic ----------
+// Min temperature for each zone (in °F). Plant is hardy in zone N if its min temp tolerance ≤ zone N min.
+const ZONE_MIN_F = { 3: -40, 4: -30, 5: -20, 6: -10, 7: 0, 8: 10, 9: 20, 10: 30, 11: 40 };
+const ALL_ZONES = [3, 4, 5, 6, 7, 8, 9, 10, 11];
+
+// Returns hardiness for a given plant in a given zone:
+//   "hardy" — survives outdoors
+//   "tender" — too cold for outdoors here
+//   "marginal" — borderline, may need protection
+//   null — no temperature data
+function plantZoneStatus(plant, zone) {
+  if (!plant || !zone) return null;
+  const min = plant.temperature_min_f;
+  if (min == null || isNaN(min)) return null;
+  const zoneMinTemp = ZONE_MIN_F[zone];
+  if (zoneMinTemp == null) return null;
+  // Hardy if plant tolerates colder than zone min, with 5°F buffer for marginal
+  if (min <= zoneMinTemp) return "hardy";
+  if (min <= zoneMinTemp + 5) return "marginal";
+  return "tender";
+}
+
 // ---------- wikipedia images (cached to localStorage) ----------
 const IMG_KEY = "cultivar:imgs:v3";
 const imgCache = store.get(IMG_KEY, {});
@@ -251,6 +273,7 @@ export default function Cultivar() {
   const [compare, setCompare] = usePersisted("cultivar:compare", []);
   const [myCollection, setMyCollection] = usePersisted("cultivar:collection", []);
   const [journal, setJournal] = usePersisted("cultivar:journal", {});
+  const [growZone, setGrowZone] = usePersisted("cultivar:zone", null);
 
   const [searchRaw, setSearchRaw] = useState("");
   const search = useDebounced(searchRaw, 180);
@@ -418,6 +441,7 @@ export default function Cultivar() {
             plantOfDay={plantOfDay}
             onOpen={openPlant} onWish={toggleWish} onCmp={toggleCmp}
             isWished={isWished} isCmp={isCmp}
+            growZone={growZone} setGrowZone={setGrowZone}
           />
         )}
 
@@ -430,11 +454,12 @@ export default function Cultivar() {
             onJournal={addJournal} journal={journal[selected.id] ?? []}
             wished={isWished(selected.id)} comped={isCmp(selected.id)} owned={inCollection(selected.id)}
             toast={toast.show}
+            growZone={growZone}
           />
         )}
 
         {view === "compare" && (
-          <Compare plants={compare} onRemove={id => setCompare(compare.filter(x => x.id !== id))} onOpen={openPlant} />
+          <Compare plants={compare} onRemove={id => setCompare(compare.filter(x => x.id !== id))} onOpen={openPlant} growZone={growZone} />
         )}
 
         {view === "wishlist" && (
@@ -509,34 +534,47 @@ const Header = memo(({ view, wishCount, cmpCount, collectionCount, onNav, onHome
   );
 });
 
+// ---------- ZONE PICKER ----------
+function ZonePicker({ zone, setZone }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="zone-picker">
+      <button className="zone-pill btn" onClick={() => setOpen(o => !o)}>
+        <span className="zone-pill-icon">📍</span>
+        {zone ? <>Zone <strong>{zone}</strong></> : "Set your zone"}
+        <Icon n={open ? "x" : "arrow"} s={11} />
+      </button>
+      {open && (
+        <div className="zone-menu">
+          <div className="zone-menu-title">USDA Hardiness Zone</div>
+          <div className="zone-menu-help">
+            Tells us if a plant survives outdoors where you live. Don't know yours?{" "}
+            <a href="https://planthardiness.ars.usda.gov/" target="_blank" rel="noopener noreferrer">Look it up by ZIP</a>
+          </div>
+          <div className="zone-grid">
+            {ALL_ZONES.map(z => (
+              <button key={z}
+                className={`zone-cell btn ${zone === z ? "on" : ""}`}
+                onClick={() => { setZone(z); setOpen(false); }}>
+                <div className="zone-num">{z}</div>
+                <div className="zone-temp">{ZONE_MIN_F[z]}°F</div>
+              </button>
+            ))}
+          </div>
+          {zone && (
+            <button className="zone-clear btn" onClick={() => { setZone(null); setOpen(false); }}>
+              Clear zone
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- CATALOG ----------
-function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDay, onOpen, onWish, onCmp, isWished, isCmp }) {
+function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDay, onOpen, onWish, onCmp, isWished, isCmp, growZone, setGrowZone }) {
   const isSearching = !!searchRaw.trim();
-  const shelves = useMemo(() => {
-    if (!plants.length) return [];
-    // Stable seeded shuffle — same order each render, different per shelf
-    const shuffle = (arr, seed) => {
-      const a = [...arr];
-      let s = seed;
-      for (let i = a.length - 1; i > 0; i--) {
-        s = (s * 9301 + 49297) % 233280;
-        const j = Math.floor((s / 233280) * (i + 1));
-        [a[i], a[j]] = [a[j], a[i]];
-      }
-      return a;
-    };
-    return [
-      { title: "Impossible to Kill", blurb: "For the serial plant-slayers.", f: p => ["Very Easy","Easy"].includes(p.difficulty) && (p.drought_tolerant || p.low_light) },
-      { title: "Dark & Moody", blurb: "Thrive in gloom. Loft apartment energy.", f: p => p.low_light && !p.rare },
-      { title: "The Weirdest Plants Alive", blurb: "Nature showing off.", f: p => p.category === "Carnivorous" || p.rare },
-      { title: "Safe for Furry Companions", blurb: "Dogs and cats approved.", f: p => p.toxicity === "Pet Safe" },
-      { title: "Something in Bloom", blurb: "For color lovers.", f: p => p.flowering },
-      { title: "Desert Dwellers", blurb: "Drought-tolerant rebels.", f: p => p.category === "Succulent" || p.drought_tolerant },
-      { title: "For the Collector", blurb: "Rare finds that turn heads.", f: p => p.rare },
-      { title: "Fragrant Specimens", blurb: "Plants that smell as good as they look.", f: p => p.fragrant },
-      { title: "Edible Garden", blurb: "Grow what you eat.", f: p => p.edible },
-    ].map((s, i) => ({ ...s, items: shuffle(plants.filter(s.f), i * 1000 + 17).slice(0, 10) })).filter(s => s.items.length >= 3);
-  }, [plants]);
 
   return (
     <div className="fade">
@@ -559,6 +597,7 @@ function Catalog({ loading, plants, filtered, searchRaw, setSearchRaw, plantOfDa
             </button>
           )}
         </div>
+        <ZonePicker zone={growZone} setZone={setGrowZone} />
       </section>
 
       {loading ? <LoadingState />
@@ -736,25 +775,6 @@ function CategoryView({ group, onBack, onOpen, onWish, onCmp, isWished, isCmp })
   );
 }
 
-function _legacyShelvesUnused({ shelves, plants, onOpen, onWish, isWished, onCmp, isCmp }) {
-  return (
-    <>
-      {shelves.map((shelf, i) => (
-        <section key={shelf.title} className="shelf" style={{ animationDelay: `${i * 60}ms` }}>
-          <SectionLabel kicker={`Shelf № ${String(i + 1).padStart(2, "0")}`} title={shelf.title} blurb={shelf.blurb} />
-          <div className="shelf-scroll">
-            {shelf.items.map(p => <MiniCard key={p.id} plant={p} onOpen={onOpen} onWish={onWish} wished={isWished(p.id)} />)}
-          </div>
-        </section>
-      ))}
-    </>
-  );
-}
-
-function _unusedSpacer() {
-  return null;
-}
-
 function SectionLabel({ kicker, title, blurb }) {
   return (
     <div className="section-label">
@@ -847,7 +867,7 @@ const PlantCard = memo(({ plant, onOpen, onWish, onCmp, wished, comped, delay = 
 ));
 
 // ---------- DETAIL ----------
-function Detail({ plant, plants, onBack, onOpen, onWish, onCmp, onAddCollection, onRemoveCollection, onJournal, journal, wished, comped, owned, toast }) {
+function Detail({ plant, plants, onBack, onOpen, onWish, onCmp, onAddCollection, onRemoveCollection, onJournal, journal, wished, comped, owned, toast, growZone }) {
   const [tab, setTab] = useState("story");
   const [full, setFull] = useState(plant);
   const [varieties, setVarieties] = useState([]);
@@ -914,6 +934,13 @@ function Detail({ plant, plants, onBack, onOpen, onWish, onCmp, onAddCollection,
             {full.toxicity === "Pet Safe" && <span className="chip-dark pet">🐾 Pet Safe</span>}
             {full.toxicity && full.toxicity !== "Pet Safe" && <span className="chip-dark tox">⚠ {full.toxicity}</span>}
             {full.rare && <span className="chip-dark rare">✦ Rare</span>}
+            {(() => {
+              const status = plantZoneStatus(full, growZone);
+              if (!status || !growZone) return null;
+              if (status === "hardy") return <span className="chip-dark hardy">✓ Hardy in Zone {growZone}</span>;
+              if (status === "marginal") return <span className="chip-dark marginal">⚠ Marginal in Zone {growZone}</span>;
+              return <span className="chip-dark tender">✗ Not hardy outdoors in Zone {growZone}</span>;
+            })()}
           </div>
         </div>
       </section>
@@ -1224,24 +1251,75 @@ function JournalTab({ plant, entries, onAdd }) {
   );
 }
 
-function Compare({ plants, onRemove, onOpen }) {
+function Compare({ plants, onRemove, onOpen, growZone }) {
   if (!plants.length) return (
     <EmptyState emoji="🌿" title="Nothing to compare yet" body="Tap the compare icon on up to 3 plants to see them side by side." />
   );
+
+  // Smart "best in row" detection — highlights which plant wins for certain rows
+  const easierThan = (a, b) => {
+    const order = { "Very Easy": 1, "Easy": 2, "Moderate": 3, "Hard": 4 };
+    return (order[a] || 99) < (order[b] || 99);
+  };
+  const easiestPlant = plants.reduce((best, p) =>
+    !best || easierThan(p.difficulty, best.difficulty) ? p : best, null);
+  const lowestLightPlant = plants.find(p => p.low_light) || null;
+  const droughtPlant = plants.find(p => p.drought_tolerant) || null;
+
   const rows = [
-    ["Species", p => <em>{p.scientific_name}</em>],
-    ["Category", p => p.category ?? "—"],
-    ["Difficulty", p => p.difficulty ?? "—"],
-    ["Light", p => p.sunlight ?? "—"],
-    ["Water", p => p.watering ?? "—"],
-    ["Pet Safe", p => p.toxicity === "Pet Safe" ? "✓" : "✗"],
-    ["Air Purifying", p => p.air_purifying ? "✓" : "—"],
-    ["Low Light", p => p.low_light ? "✓" : "—"],
-    ["Drought Tolerant", p => p.drought_tolerant ? "✓" : "—"],
-    ["Edible", p => p.edible ? "✓" : "—"],
-    ["Flowering", p => p.flowering ? "✓" : "—"],
-    ["Rare", p => p.rare ? "✦" : "—"],
+    { label: "Species", fn: p => <em className="compare-sci">{p.scientific_name}</em> },
+    { label: "Category", fn: p => p.category ?? "—" },
+    { label: "Difficulty", fn: p => p.difficulty ?? "—",
+      best: p => p === easiestPlant ? "easiest to care for" : null },
+    { label: "Light", fn: p => p.sunlight ?? "—" },
+    { label: "Water", fn: p => p.watering ?? "—" },
+    { label: "Humidity", fn: p => p.humidity ?? "—" },
+    { label: "Mature size", fn: p => p.mature_height ?? p.mature_size ?? "—" },
+    { label: "Native to", fn: p => p.native_region ?? "—" },
+    { label: "Bloom season", fn: p => p.bloom_season ?? "—" },
+    { label: "Pet Safe", fn: p => p.toxicity === "Pet Safe" ? "✓" : (p.toxicity ? "✗" : "—") },
+    { label: "Air Purifying", fn: p => p.air_purifying ? "✓" : "—" },
+    { label: "Low Light", fn: p => p.low_light ? "✓" : "—",
+      best: p => p === lowestLightPlant ? "best for dark spots" : null },
+    { label: "Drought Tolerant", fn: p => p.drought_tolerant ? "✓" : "—",
+      best: p => p === droughtPlant ? "most forgiving" : null },
+    { label: "Fragrant", fn: p => p.fragrant ? "✓" : "—" },
+    { label: "Edible", fn: p => p.edible ? "✓" : "—" },
+    { label: "Flowering", fn: p => p.flowering ? "✓" : "—" },
+    { label: "Outdoor friendly", fn: p => p.outdoor_ok ? "✓" : "—" },
+    { label: "Rare", fn: p => p.rare ? "✦" : "—" },
   ];
+
+  // Add zone row if user has set a zone
+  if (growZone) {
+    rows.splice(8, 0, {
+      label: `Zone ${growZone} hardiness`,
+      fn: p => {
+        const s = plantZoneStatus(p, growZone);
+        if (s === "hardy") return <span className="zone-status hardy">✓ Hardy</span>;
+        if (s === "marginal") return <span className="zone-status marginal">⚠ Marginal</span>;
+        if (s === "tender") return <span className="zone-status tender">✗ Indoor only</span>;
+        return "—";
+      },
+    });
+  }
+
+  // Verdict — synthesize a recommendation
+  const verdicts = [];
+  if (easiestPlant && plants.length > 1) {
+    verdicts.push({ pick: easiestPlant, why: "easiest to care for" });
+  }
+  const petSafe = plants.filter(p => p.toxicity === "Pet Safe");
+  if (petSafe.length > 0 && petSafe.length < plants.length) {
+    verdicts.push({ pick: petSafe[0], why: "the only one safe around pets" });
+  }
+  if (growZone) {
+    const hardy = plants.filter(p => plantZoneStatus(p, growZone) === "hardy");
+    if (hardy.length > 0 && hardy.length < plants.length) {
+      verdicts.push({ pick: hardy[0], why: `hardy outdoors in your zone (${growZone})` });
+    }
+  }
+
   return (
     <div className="fade page-wrap">
       <SectionLabel kicker="Side by Side" title="Compare" blurb="Weighing your options." />
@@ -1264,15 +1342,34 @@ function Compare({ plants, onRemove, onOpen }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(([label, fn]) => (
+            {rows.map(({ label, fn, best }) => (
               <tr key={label}>
                 <td className="compare-label">{label}</td>
-                {plants.map(p => <td key={p.id}>{fn(p)}</td>)}
+                {plants.map(p => {
+                  const winner = best && best(p);
+                  return (
+                    <td key={p.id} className={winner ? "compare-winner" : ""}>
+                      {fn(p)}
+                      {winner && <div className="compare-winner-tag">{winner}</div>}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {verdicts.length > 0 && (
+        <div className="compare-verdict">
+          <div className="compare-verdict-title">The verdict</div>
+          {verdicts.map((v, i) => (
+            <button key={i} className="compare-verdict-row btn" onClick={() => onOpen(v.pick)}>
+              <strong>{v.pick.common_name}</strong> is {v.why}
+              <Icon n="arrow" s={12} />
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1707,6 +1804,89 @@ function Styles() {
         color: var(--ink-faint);
       }
 
+      /* Zone Picker */
+      .zone-picker { position: relative; display: inline-block; margin-top: 14px; }
+      .zone-pill {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 8px 14px; border-radius: 999px;
+        background: var(--card); border: 1px solid var(--border);
+        font-family: inherit; font-size: 13px; color: var(--ink-soft);
+        cursor: pointer; transition: all 0.18s ease;
+      }
+      .zone-pill:hover { border-color: var(--moss); color: var(--ink); }
+      .zone-pill strong { color: var(--moss); font-weight: 700; margin: 0 2px; }
+      .zone-pill-icon { font-size: 14px; }
+      .zone-menu {
+        position: absolute; top: calc(100% + 8px); left: 0;
+        z-index: 50; min-width: 280px; max-width: 340px;
+        background: var(--paper); border: 1px solid var(--border);
+        border-radius: 12px; padding: 16px;
+        box-shadow: 0 12px 36px rgba(0,0,0,0.12);
+      }
+      .zone-menu-title {
+        font-family: 'Fraunces', serif; font-size: 14px; font-weight: 600;
+        color: var(--ink); margin-bottom: 4px;
+      }
+      .zone-menu-help {
+        font-size: 11px; color: var(--ink-faint);
+        margin-bottom: 12px; line-height: 1.4;
+      }
+      .zone-menu-help a { color: var(--moss); text-decoration: underline; }
+      .zone-grid {
+        display: grid; grid-template-columns: repeat(3, 1fr);
+        gap: 6px; margin-bottom: 8px;
+      }
+      .zone-cell {
+        padding: 10px 6px; text-align: center;
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: 8px; cursor: pointer; font-family: inherit;
+        transition: all 0.15s ease;
+      }
+      .zone-cell:hover { border-color: var(--moss); }
+      .zone-cell.on { background: var(--moss); color: var(--paper); border-color: var(--moss); }
+      .zone-num { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 600; }
+      .zone-temp { font-size: 10px; opacity: 0.8; margin-top: 2px; }
+      .zone-clear {
+        width: 100%; padding: 8px; margin-top: 6px;
+        font-size: 11px; color: var(--ink-faint);
+        background: none; border: none; cursor: pointer;
+      }
+      .zone-clear:hover { color: var(--ink); }
+
+      /* Compare upgrades */
+      .compare-sci { font-style: italic; font-size: 12px; color: var(--ink-soft); }
+      .compare-winner {
+        background: rgba(82,183,136,0.08);
+        position: relative;
+      }
+      .compare-winner-tag {
+        font-size: 9px; color: var(--moss); margin-top: 3px;
+        text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600;
+      }
+      .zone-status.hardy { color: var(--moss); font-weight: 600; }
+      .zone-status.marginal { color: #c8932b; font-weight: 600; }
+      .zone-status.tender { color: #b84640; font-weight: 600; }
+      .compare-verdict {
+        margin-top: 24px; padding: 18px;
+        background: var(--paper); border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+      .compare-verdict-title {
+        font-family: 'Fraunces', serif; font-size: 13px;
+        text-transform: uppercase; letter-spacing: 0.08em;
+        color: var(--ink-faint); margin-bottom: 10px;
+      }
+      .compare-verdict-row {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 8px; width: 100%; padding: 10px 12px;
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: 8px; margin-bottom: 6px;
+        font-family: inherit; font-size: 13px; color: var(--ink);
+        text-align: left; cursor: pointer; transition: all 0.18s ease;
+      }
+      .compare-verdict-row:hover { border-color: var(--moss); transform: translateX(2px); }
+      .compare-verdict-row strong { color: var(--moss); }
+
       .section-label { margin-bottom: 20px; }
       .section-kicker {
         display: flex; align-items: center; gap: 10px;
@@ -1989,6 +2169,9 @@ function Styles() {
       .chip-dark.pet { background: rgba(82,183,136,0.25); border-color: rgba(82,183,136,0.5); }
       .chip-dark.tox { background: rgba(193,57,43,0.25); border-color: rgba(193,57,43,0.5); }
       .chip-dark.rare { background: rgba(244,237,224,0.2); border-color: var(--gold); color: var(--gold); }
+      .chip-dark.hardy { background: rgba(82,183,136,0.3); border-color: rgba(82,183,136,0.6); }
+      .chip-dark.marginal { background: rgba(255,180,80,0.25); border-color: rgba(255,180,80,0.55); }
+      .chip-dark.tender { background: rgba(180,70,64,0.25); border-color: rgba(180,70,64,0.5); }
 
       .detail-actions {
         display: grid; grid-template-columns: repeat(3, 1fr);
