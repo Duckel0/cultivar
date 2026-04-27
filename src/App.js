@@ -581,10 +581,10 @@ function LiveSearch({ value, onChange, plants, onOpen, placeholder }) {
 function useToast() {
   const [m, set] = useState(null);
   const timer = useRef(null);
-  const show = useCallback((text, tone = "ok") => {
+  const show = useCallback((text, tone = "ok", action = null) => {
     clearTimeout(timer.current);
-    set({ text, tone, id: Date.now() });
-    timer.current = setTimeout(() => set(null), 2400);
+    set({ text, tone, action, id: Date.now() });
+    timer.current = setTimeout(() => set(null), action ? 4500 : 2400);
   }, []);
   const el = m && (
     <div role="status" style={{
@@ -596,7 +596,20 @@ function useToast() {
       boxShadow: "0 10px 32px rgba(0,0,0,0.3)",
       animation: "slideUp 0.25s ease", maxWidth: "90vw",
       border: "1px solid rgba(244,237,224,0.1)",
-    }}>{m.text}</div>
+      display: "flex", alignItems: "center", gap: 14,
+    }}>
+      <span>{m.text}</span>
+      {m.action && (
+        <button onClick={() => { m.action.fn(); set(null); clearTimeout(timer.current); }}
+          style={{
+            background: "transparent", border: "1px solid rgba(244,237,224,0.4)",
+            color: "#f4ede0", padding: "4px 12px", borderRadius: 99,
+            fontFamily: "inherit", fontSize: 12, fontWeight: 600,
+            cursor: "pointer", letterSpacing: "0.06em",
+            textTransform: "uppercase",
+          }}>{m.action.label}</button>
+      )}
+    </div>
   );
   return { show, el };
 }
@@ -668,6 +681,10 @@ export default function Cultivar() {
       if (r.view === "detail" && r.slug) {
         const f = data.find(x => x.slug === r.slug);
         if (f) { setSelected(f); setView("detail"); }
+        else {
+          // Plant not found — show notFound state instead of leaving them stuck
+          setView("notfound");
+        }
       } else if (r.category) {
         setActiveCategory(r.category);
       }
@@ -707,6 +724,7 @@ export default function Cultivar() {
       if (r.view === "detail" && r.slug) {
         const f = plants.find(x => x.slug === r.slug);
         if (f) { setSelected(f); setView("detail"); }
+        else if (plants.length) { setView("notfound"); setSelected(null); }
       } else if (r.category) {
         setView("catalog"); setSelected(null);
         setActiveCategory(r.category);
@@ -755,7 +773,15 @@ export default function Cultivar() {
 
   const toggleWish = useCallback((p) => {
     setWishlist(w => {
-      if (w.find(x => x.id === p.id)) { toast.show("Removed from wishlist"); return w.filter(x => x.id !== p.id); }
+      if (w.find(x => x.id === p.id)) {
+        const prev = w;
+        const next = w.filter(x => x.id !== p.id);
+        toast.show("Removed from wishlist", "ok", {
+          label: "Undo",
+          fn: () => setWishlist(prev),
+        });
+        return next;
+      }
       toast.show(`${p.common_name} saved to wishlist`);
       return [...w, p];
     });
@@ -791,36 +817,55 @@ export default function Cultivar() {
     toast.show("Entry logged 📓");
   }, [toast, setJournal]);
 
+  // Scroll restoration — remember Y position per route so back-nav lands you where you were
+  const scrollMemory = useRef({});
+  const scrollKeyOf = useCallback(() => {
+    if (view === "detail" && selected) return `plant:${selected.slug}`;
+    if (activeCategory) return `cat:${activeCategory}`;
+    return `view:${view}`;
+  }, [view, selected, activeCategory]);
+
   const openPlant = useCallback((p) => {
+    scrollMemory.current[scrollKeyOf()] = window.scrollY;
     setSelected(p); setView("detail");
     window.history.pushState({}, "", `/plant/${p.slug}`);
     window.scrollTo({ top: 0, behavior: "instant" });
     document.title = `${p.common_name} — Cultivar`;
-  }, []);
+  }, [scrollKeyOf]);
 
   const openCategory = useCallback((catId) => {
+    scrollMemory.current[scrollKeyOf()] = window.scrollY;
     setActiveCategory(catId);
     window.history.pushState({}, "", `/category/${catId}`);
-    window.scrollTo({ top: 0, behavior: "instant" });
-  }, []);
+    // Restore scroll if we've been here before, else go top
+    const restored = scrollMemory.current[`cat:${catId}`];
+    setTimeout(() => window.scrollTo({ top: restored || 0, behavior: "instant" }), 0);
+  }, [scrollKeyOf]);
 
   const closeCategory = useCallback(() => {
+    scrollMemory.current[scrollKeyOf()] = window.scrollY;
     setActiveCategory(null);
     window.history.pushState({}, "", "/");
-    window.scrollTo({ top: 0, behavior: "instant" });
-  }, []);
+    const restored = scrollMemory.current[`view:catalog`];
+    setTimeout(() => window.scrollTo({ top: restored || 0, behavior: "instant" }), 0);
+  }, [scrollKeyOf]);
 
-  // Smart back from a plant detail: if user came from a category, return to it
+  // Smart back from a plant detail: if user came from a category, return to it AND restore scroll
   const goBackFromDetail = useCallback(() => {
+    scrollMemory.current[scrollKeyOf()] = window.scrollY;
     setView("catalog"); setSelected(null);
+    let restoreKey;
     if (activeCategory) {
       window.history.pushState({}, "", `/category/${activeCategory}`);
+      restoreKey = `cat:${activeCategory}`;
     } else {
       window.history.pushState({}, "", "/");
       document.title = "Cultivar — The Plant Journal";
+      restoreKey = `view:catalog`;
     }
-    window.scrollTo({ top: 0, behavior: "instant" });
-  }, [activeCategory]);
+    const restored = scrollMemory.current[restoreKey];
+    setTimeout(() => window.scrollTo({ top: restored || 0, behavior: "instant" }), 0);
+  }, [activeCategory, scrollKeyOf]);
 
   const goHome = useCallback(() => {
     setView("catalog"); setSelected(null);
@@ -889,7 +934,16 @@ export default function Cultivar() {
         )}
 
         {view === "wishlist" && (
-          <Wishlist plants={wishlist} onOpen={openPlant} onRemove={id => setWishlist(wishlist.filter(x => x.id !== id))} toast={toast.show} />
+          <Wishlist plants={wishlist} onOpen={openPlant} toast={toast.show}
+            onRemove={(plant) => {
+              const prev = wishlist;
+              setWishlist(wishlist.filter(x => x.id !== plant.id));
+              toast.show(`${plant.common_name} removed`, "ok", {
+                label: "Undo",
+                fn: () => setWishlist(prev),
+              });
+            }}
+          />
         )}
 
         {view === "shared" && sharedWishlist && (
@@ -925,6 +979,22 @@ export default function Cultivar() {
         )}
 
         {view === "quiz" && <Quiz plants={plants} onOpen={openPlant} />}
+
+        {view === "notfound" && (
+          <div className="fade page-wrap notfound">
+            <div className="notfound-emoji">🌿</div>
+            <h1 className="notfound-title">This plant has wandered off</h1>
+            <p className="notfound-body">
+              The link you followed doesn't match anything in our greenhouse. It might've been renamed,
+              removed, or never existed. Let's get you back to browsing.
+            </p>
+            <div className="notfound-actions">
+              <button className="btn notfound-home" onClick={goHome}>
+                <Icon n="compass" s={14} /> Browse the catalog
+              </button>
+            </div>
+          </div>
+        )}
       </main>
 
       <MobileNav view={view} onNav={(id) => {
@@ -1894,26 +1964,17 @@ function Compare({ plants, onRemove, onOpen, growZone }) {
 }
 
 function Wishlist({ plants, onOpen, onRemove, toast }) {
+  const [shareModal, setShareModal] = useState(false);
   if (!plants.length) return (
     <EmptyState emoji="🌱" title="Your wishlist is empty" body="Tap the heart on any plant to save it here for later." />
   );
-  const share = async () => {
-    // Encode plant IDs in base36 for compact URLs (~3-4 chars per plant vs full slugs)
+
+  const generateShareLink = async (from) => {
     const ids = plants.map(p => p.id).filter(Boolean).map(id => id.toString(36)).join(".");
     if (!ids) return;
-    // Optional sender name — keeps it warm without being mandatory
-    let from = "";
-    try {
-      const stored = localStorage.getItem("cultivar:share-name");
-      const input = window.prompt("Sign your wishlist? (optional)", stored || "");
-      if (input && input.trim()) {
-        from = input.trim().slice(0, 30);
-        localStorage.setItem("cultivar:share-name", from);
-      } else if (input === null) {
-        // User hit Cancel — abort share
-        return;
-      }
-    } catch {}
+    if (from) {
+      try { localStorage.setItem("cultivar:share-name", from); } catch {}
+    }
     const url = `${window.location.origin}/?w=${ids}${from ? `&from=${encodeURIComponent(from)}` : ""}`;
     if (navigator.share) {
       try { await navigator.share({ title: from ? `${from}'s Cultivar Wishlist` : "My Cultivar Wishlist", url }); return; } catch {}
@@ -1929,7 +1990,7 @@ function Wishlist({ plants, onOpen, onRemove, toast }) {
     <div className="fade page-wrap">
       <div className="wishlist-header">
         <SectionLabel kicker="Saved for Later" title="Wishlist" blurb={`${plants.length} plant${plants.length !== 1 ? "s" : ""} you'd like to bring home.`} />
-        <button className="btn share-wishlist" onClick={share}>
+        <button className="btn share-wishlist" onClick={() => setShareModal(true)}>
           <Icon n="share" s={14} /> Share wishlist
         </button>
       </div>
@@ -1938,7 +1999,7 @@ function Wishlist({ plants, onOpen, onRemove, toast }) {
           <article key={p.id} className="card card-fade" onClick={() => onOpen(p)} style={{ animationDelay: `${i * 30}ms` }}>
             <div className="card-image-wrap">
               <PlantImage plant={p} height={200} />
-              <button className="card-btn btn card-btn-single" onClick={e => { e.stopPropagation(); onRemove(p.id); }}
+              <button className="card-btn btn card-btn-single" onClick={e => { e.stopPropagation(); onRemove(p); }}
                 style={{ background: "rgba(244,237,224,0.92)", color: "#b84640" }} aria-label="Remove">
                 <Icon n="x" s={13} />
               </button>
@@ -1950,6 +2011,14 @@ function Wishlist({ plants, onOpen, onRemove, toast }) {
           </article>
         ))}
       </div>
+      {shareModal && (
+        <ShareModal
+          defaultName={(() => { try { return localStorage.getItem("cultivar:share-name") || ""; } catch { return ""; } })()}
+          plantCount={plants.length}
+          onConfirm={(name) => { setShareModal(false); generateShareLink(name); }}
+          onClose={() => setShareModal(false)}
+        />
+      )}
     </div>
   );
 }
@@ -2199,6 +2268,59 @@ function LoadingState() {
     <div className="loading">
       <div className="spinner-big" />
       <p>Unfolding the field guide…</p>
+    </div>
+  );
+}
+
+function ShareModal({ defaultName, plantCount, onConfirm, onClose }) {
+  const [name, setName] = useState(defaultName || "");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    setTimeout(() => inputRef.current?.focus(), 50);
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const submit = (e) => {
+    e?.preventDefault();
+    onConfirm(name.trim().slice(0, 30));
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <button className="modal-close btn" onClick={onClose} aria-label="Close">
+          <Icon n="x" s={18} />
+        </button>
+        <div className="modal-eyebrow">Share your wishlist</div>
+        <h2 className="modal-title">Sign it?</h2>
+        <p className="modal-body">
+          {plantCount} plant{plantCount !== 1 ? "s" : ""} ready to share. Adding your name makes the link feel personal — totally optional.
+        </p>
+        <form onSubmit={submit}>
+          <input
+            ref={inputRef}
+            type="text"
+            className="modal-input"
+            placeholder="Your name (optional)"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            maxLength={30}
+          />
+          <div className="modal-actions">
+            <button type="button" className="btn modal-btn-secondary" onClick={() => onConfirm("")}>
+              Skip — share anonymously
+            </button>
+            <button type="submit" className="btn modal-btn-primary">
+              <Icon n="share" s={14} /> Get share link
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -2575,6 +2697,117 @@ function Styles() {
         transition: all 0.18s ease;
       }
       .share-wishlist:hover { border-color: var(--moss); color: var(--moss); }
+
+      /* Modal (share name, etc.) */
+      .modal-backdrop {
+        position: fixed; inset: 0; z-index: 1000;
+        background: rgba(0,0,0,0.45);
+        display: flex; align-items: center; justify-content: center;
+        padding: 20px;
+        animation: fadeUp 0.18s ease;
+        backdrop-filter: blur(4px);
+      }
+      .modal {
+        position: relative;
+        background: var(--paper);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 32px 28px 24px;
+        max-width: 440px; width: 100%;
+        box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+        animation: slideUp 0.22s ease;
+      }
+      .modal-close {
+        position: absolute; top: 14px; right: 14px;
+        width: 32px; height: 32px;
+        display: flex; align-items: center; justify-content: center;
+        background: transparent; border: none;
+        color: var(--ink-faint); border-radius: 99px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .modal-close:hover { background: var(--card); color: var(--ink); }
+      .modal-eyebrow {
+        font-size: 10px; color: var(--ink-faint);
+        text-transform: uppercase; letter-spacing: 0.22em;
+        font-weight: 600; margin-bottom: 8px;
+      }
+      .modal-title {
+        font-family: 'Fraunces', serif;
+        font-size: 28px; font-weight: 400;
+        letter-spacing: -0.02em; line-height: 1.1;
+        margin-bottom: 10px; color: var(--ink);
+      }
+      .modal-body {
+        font-size: 14px; color: var(--ink-soft);
+        line-height: 1.55; margin-bottom: 20px;
+      }
+      .modal-input {
+        width: 100%; padding: 12px 14px;
+        background: var(--card); border: 1.5px solid var(--border);
+        border-radius: 4px; font-family: inherit;
+        font-size: 15px; color: var(--ink);
+        margin-bottom: 16px;
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      .modal-input:focus {
+        border-color: var(--moss);
+        box-shadow: 0 0 0 3px rgba(30,58,39,0.1);
+      }
+      .modal-actions {
+        display: flex; gap: 8px; flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .modal-btn-secondary {
+        padding: 10px 16px;
+        background: transparent; color: var(--ink-soft);
+        border: 1px solid var(--border); border-radius: 99px;
+        font-family: inherit; font-size: 13px; font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .modal-btn-secondary:hover { border-color: var(--ink-soft); color: var(--ink); }
+      .modal-btn-primary {
+        display: inline-flex; align-items: center; gap: 7px;
+        padding: 10px 18px;
+        background: var(--moss); color: var(--cream);
+        border: none; border-radius: 99px;
+        font-family: inherit; font-size: 13px; font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s ease, transform 0.15s ease;
+      }
+      .modal-btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+
+      /* 404 / not found */
+      .notfound {
+        text-align: center; padding: 80px 24px;
+      }
+      .notfound-emoji { font-size: 64px; opacity: 0.4; margin-bottom: 20px; }
+      .notfound-title {
+        font-family: 'Fraunces', serif;
+        font-size: clamp(28px, 5vw, 42px); font-weight: 400;
+        letter-spacing: -0.025em; line-height: 1.1;
+        margin-bottom: 12px; color: var(--ink);
+      }
+      .notfound-body {
+        font-size: 15px; color: var(--ink-soft);
+        line-height: 1.6; max-width: 460px;
+        margin: 0 auto 24px;
+      }
+      .notfound-actions {
+        display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+      }
+      .notfound-home {
+        display: inline-flex; align-items: center; gap: 7px;
+        padding: 11px 22px;
+        background: var(--moss); color: var(--cream);
+        border: none; border-radius: 99px;
+        font-family: inherit; font-size: 14px; font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s ease, transform 0.15s ease;
+      }
+      .notfound-home:hover { opacity: 0.9; transform: translateY(-1px); }
 
       /* Shared wishlist banner */
       .shared-banner {
