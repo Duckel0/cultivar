@@ -616,6 +616,7 @@ export default function Cultivar() {
   const [view, setView] = useState("catalog");
   const [selected, setSelected] = useState(null);
   const [activeCategory, setActiveCategory] = useState(null);
+  const [sharedWishlist, setSharedWishlist] = useState(null);
   const [plants, setPlants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -670,22 +671,18 @@ export default function Cultivar() {
       } else if (r.category) {
         setActiveCategory(r.category);
       }
-      // Import shared wishlist from URL ?wish=slug1,slug2,...
+      // Detect shared wishlist URL — show it as its own view, don't auto-import
       try {
         const params = new URLSearchParams(window.location.search);
-        const wishParam = params.get("wish");
+        const wishParam = params.get("w");
+        const fromParam = params.get("from");
         if (wishParam) {
-          const slugs = wishParam.split(",").map(s => s.trim()).filter(Boolean);
-          const found = slugs.map(s => data.find(x => x.slug === s)).filter(Boolean);
+          // Decode base36-encoded IDs
+          const ids = wishParam.split(".").map(s => parseInt(s, 36)).filter(n => !isNaN(n));
+          const found = ids.map(id => data.find(x => x.id === id)).filter(Boolean);
           if (found.length) {
-            setWishlist(prev => {
-              const existing = new Set(prev.map(p => p.id));
-              const newOnes = found.filter(p => !existing.has(p.id));
-              if (newOnes.length) toast.show(`Added ${newOnes.length} plant${newOnes.length === 1 ? "" : "s"} to your wishlist`);
-              return [...prev, ...newOnes];
-            });
-            // Clean URL after import
-            window.history.replaceState({}, "", window.location.pathname);
+            setSharedWishlist({ plants: found, from: fromParam || null });
+            setView("shared");
           }
         }
       } catch {}
@@ -893,6 +890,30 @@ export default function Cultivar() {
 
         {view === "wishlist" && (
           <Wishlist plants={wishlist} onOpen={openPlant} onRemove={id => setWishlist(wishlist.filter(x => x.id !== id))} toast={toast.show} />
+        )}
+
+        {view === "shared" && sharedWishlist && (
+          <SharedWishlist
+            shared={sharedWishlist}
+            myWishlist={wishlist}
+            onOpen={openPlant}
+            onSaveOne={(p) => {
+              setWishlist(prev => prev.find(x => x.id === p.id) ? prev : [...prev, p]);
+              toast.show(`${p.common_name} saved`);
+            }}
+            onSaveAll={() => {
+              const existing = new Set(wishlist.map(p => p.id));
+              const newOnes = sharedWishlist.plants.filter(p => !existing.has(p.id));
+              if (!newOnes.length) { toast.show("All already saved"); return; }
+              setWishlist([...wishlist, ...newOnes]);
+              toast.show(`Saved ${newOnes.length} plant${newOnes.length === 1 ? "" : "s"} to your wishlist`);
+            }}
+            onDone={() => {
+              setSharedWishlist(null);
+              setView("catalog");
+              window.history.replaceState({}, "", "/");
+            }}
+          />
         )}
 
         {view === "collection" && (
@@ -1877,11 +1898,25 @@ function Wishlist({ plants, onOpen, onRemove, toast }) {
     <EmptyState emoji="🌱" title="Your wishlist is empty" body="Tap the heart on any plant to save it here for later." />
   );
   const share = async () => {
-    // Encode slugs into URL hash so it's shareable
-    const slugs = plants.map(p => p.slug).filter(Boolean);
-    const url = `${window.location.origin}/?wish=${encodeURIComponent(slugs.join(","))}`;
+    // Encode plant IDs in base36 for compact URLs (~3-4 chars per plant vs full slugs)
+    const ids = plants.map(p => p.id).filter(Boolean).map(id => id.toString(36)).join(".");
+    if (!ids) return;
+    // Optional sender name — keeps it warm without being mandatory
+    let from = "";
+    try {
+      const stored = localStorage.getItem("cultivar:share-name");
+      const input = window.prompt("Sign your wishlist? (optional)", stored || "");
+      if (input && input.trim()) {
+        from = input.trim().slice(0, 30);
+        localStorage.setItem("cultivar:share-name", from);
+      } else if (input === null) {
+        // User hit Cancel — abort share
+        return;
+      }
+    } catch {}
+    const url = `${window.location.origin}/?w=${ids}${from ? `&from=${encodeURIComponent(from)}` : ""}`;
     if (navigator.share) {
-      try { await navigator.share({ title: "My Cultivar Wishlist", url }); return; } catch {}
+      try { await navigator.share({ title: from ? `${from}'s Cultivar Wishlist` : "My Cultivar Wishlist", url }); return; } catch {}
     }
     try {
       await navigator.clipboard.writeText(url);
@@ -1914,6 +1949,63 @@ function Wishlist({ plants, onOpen, onRemove, toast }) {
             </div>
           </article>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function SharedWishlist({ shared, myWishlist, onOpen, onSaveOne, onSaveAll, onDone }) {
+  const myIds = new Set(myWishlist.map(p => p.id));
+  const newCount = shared.plants.filter(p => !myIds.has(p.id)).length;
+  const allSaved = newCount === 0;
+
+  return (
+    <div className="fade page-wrap">
+      <div className="shared-banner">
+        <div className="shared-banner-eyebrow">A wishlist shared with you</div>
+        <h1 className="shared-banner-title">
+          {shared.from ? <><em>{shared.from}'s</em> wishlist</> : "Their wishlist"}
+        </h1>
+        <p className="shared-banner-sub">
+          {shared.plants.length} plant{shared.plants.length !== 1 ? "s" : ""}
+          {allSaved ? " — all already in your wishlist." : (
+            shared.from ? ` they'd love. Save what catches your eye.` : ` shared with you. Save what catches your eye.`
+          )}
+        </p>
+        <div className="shared-banner-actions">
+          {!allSaved && (
+            <button className="btn shared-saveall" onClick={onSaveAll}>
+              <Icon n="heart" s={14} /> Save all {newCount === shared.plants.length ? "" : `${newCount} new `}to my wishlist
+            </button>
+          )}
+          <button className="btn shared-done" onClick={onDone}>
+            {allSaved ? "Browse Cultivar" : "Done — back to browsing"}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid">
+        {shared.plants.map((p, i) => {
+          const saved = myIds.has(p.id);
+          return (
+            <article key={p.id} className="card card-fade" onClick={() => onOpen(p)} style={{ animationDelay: `${i * 30}ms` }}>
+              <div className="card-image-wrap">
+                <PlantImage plant={p} height={200} />
+                <button
+                  className={`card-btn btn card-btn-single shared-savebtn ${saved ? "saved" : ""}`}
+                  onClick={e => { e.stopPropagation(); if (!saved) onSaveOne(p); }}
+                  aria-label={saved ? "Already saved" : "Save to my wishlist"}
+                  disabled={saved}>
+                  {saved ? <Icon n="check" s={14} /> : <Icon n="heart" s={14} />}
+                </button>
+              </div>
+              <div className="card-body">
+                <div className="card-name">{p.common_name}</div>
+                <div className="card-sci">{p.scientific_name}</div>
+              </div>
+            </article>
+          );
+        })}
       </div>
     </div>
   );
@@ -2483,6 +2575,72 @@ function Styles() {
         transition: all 0.18s ease;
       }
       .share-wishlist:hover { border-color: var(--moss); color: var(--moss); }
+
+      /* Shared wishlist banner */
+      .shared-banner {
+        background: linear-gradient(135deg, rgba(82,183,136,0.12), rgba(82,183,136,0.04));
+        border: 1px solid rgba(82,183,136,0.25);
+        border-radius: 8px;
+        padding: 28px 28px 24px;
+        margin-bottom: 28px;
+      }
+      @media (max-width: 600px) {
+        .shared-banner { padding: 22px 20px 20px; }
+      }
+      .shared-banner-eyebrow {
+        font-size: 10px; color: var(--moss);
+        text-transform: uppercase; letter-spacing: 0.22em;
+        font-weight: 700; margin-bottom: 10px;
+      }
+      .shared-banner-title {
+        font-family: 'Fraunces', serif;
+        font-size: clamp(26px, 4.5vw, 38px);
+        font-weight: 400; letter-spacing: -0.025em;
+        line-height: 1.1; margin-bottom: 8px;
+        color: var(--ink);
+      }
+      .shared-banner-title em {
+        font-family: 'Instrument Serif', serif;
+        font-style: italic; color: var(--moss);
+      }
+      .shared-banner-sub {
+        font-size: 14px; color: var(--ink-soft);
+        line-height: 1.5; margin-bottom: 16px;
+        max-width: 540px;
+      }
+      .shared-banner-actions {
+        display: flex; gap: 10px; flex-wrap: wrap;
+      }
+      .shared-saveall {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 10px 18px;
+        background: var(--moss); color: var(--cream);
+        border: none; border-radius: 99px;
+        font-family: inherit; font-size: 13px; font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s ease, transform 0.15s ease;
+      }
+      .shared-saveall:hover { opacity: 0.9; transform: translateY(-1px); }
+      .shared-done {
+        padding: 10px 18px;
+        background: transparent; color: var(--ink-soft);
+        border: 1px solid var(--border); border-radius: 99px;
+        font-family: inherit; font-size: 13px; font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .shared-done:hover { border-color: var(--ink-soft); color: var(--ink); }
+
+      /* Per-card save button on shared wishlist */
+      .shared-savebtn {
+        background: rgba(244,237,224,0.92) !important;
+        color: var(--moss) !important;
+      }
+      .shared-savebtn.saved {
+        background: var(--moss) !important;
+        color: var(--cream) !important;
+        cursor: default;
+      }
 
       .zone-picker { position: relative; display: inline-block; }
       .zone-pill {
